@@ -32,16 +32,23 @@ function rawFetch(path: string, init: RequestInit): Promise<Response> {
   return fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include' });
 }
 
-/** Exchange the refresh cookie for a fresh access token. Returns success. */
+/** Exchange the refresh cookie for a fresh access token. Returns success.
+ * Never throws — a network error (e.g. the API is down) just means "not signed in"
+ * so the app falls through to the login screen instead of hanging. */
 export async function refreshAccessToken(): Promise<boolean> {
-  const res = await rawFetch('/auth/refresh', { method: 'POST' });
-  if (!res.ok) {
+  try {
+    const res = await rawFetch('/auth/refresh', { method: 'POST' });
+    if (!res.ok) {
+      setAccessToken(null);
+      return false;
+    }
+    const data = (await res.json()) as { access_token: string };
+    setAccessToken(data.access_token);
+    return true;
+  } catch {
     setAccessToken(null);
     return false;
   }
-  const data = (await res.json()) as { access_token: string };
-  setAccessToken(data.access_token);
-  return true;
 }
 
 async function toError(res: Response): Promise<ApiError> {

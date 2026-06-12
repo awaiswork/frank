@@ -13,18 +13,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authed');
   }, []);
 
-  // On boot, try to restore a session from the refresh cookie.
+  // On boot, try to restore a session from the refresh cookie. Any failure
+  // (no session, or the API being unreachable) resolves to 'anon' so the app
+  // always reaches the login screen instead of hanging on "Loading…".
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const ok = await refreshAccessToken();
-      if (cancelled) return;
-      if (!ok) {
-        setStatus('anon');
-        return;
-      }
       try {
-        await loadUser();
+        const ok = await refreshAccessToken();
+        if (cancelled) return;
+        if (ok) await loadUser();
+        else setStatus('anon');
       } catch {
         if (!cancelled) setStatus('anon');
       }
