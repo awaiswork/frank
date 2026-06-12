@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 
-type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals';
+type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
 
 function Icon({ name }: { name: IconName }) {
   const p = {
@@ -53,6 +53,20 @@ function Icon({ name }: { name: IconName }) {
           <circle cx="12" cy="12" r="1" />
         </svg>
       );
+    case 'insight':
+      return (
+        <svg {...p}>
+          <path d="M3 17l5-5 4 4 7-7" />
+          <path d="M16 6h5v5" />
+        </svg>
+      );
+    case 'settings':
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" />
+        </svg>
+      );
   }
 }
 
@@ -81,6 +95,8 @@ const RECORDS: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/transactions', 'Transactions', 'transactions'],
   ['/budgets', 'Budgets', 'budgets'],
   ['/goals', 'Goals', 'goals'],
+  ['/insights', 'Insight', 'insight'],
+  ['/settings', 'Settings', 'settings'],
 ];
 
 function NavItem({ to, label, icon }: { to: string; label: string; icon: IconName }) {
@@ -103,8 +119,13 @@ function NavItem({ to, label, icon }: { to: string; label: string; icon: IconNam
 }
 
 export function Layout() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [theme, toggleTheme] = useTheme();
+
+  // First-run users (no income yet) land in onboarding until they finish or skip.
+  const needsOnboarding =
+    user != null && user.monthly_income_cents == null && !localStorage.getItem('frank-onboarded');
+  if (needsOnboarding) return <Navigate to="/onboarding" replace />;
 
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();

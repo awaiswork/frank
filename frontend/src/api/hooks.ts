@@ -11,6 +11,7 @@ import type {
   NlDraft,
   Transaction,
   TransactionCreate,
+  User,
 } from './types';
 
 const qs = (params: Record<string, string | undefined>): string => {
@@ -65,6 +66,15 @@ export function useParseNl() {
   return useMutation({
     mutationFn: (text: string) =>
       apiFetch<NlDraft[]>('/nl/parse', { method: 'POST', body: json({ text }) }),
+  });
+}
+
+export function useUpdateMe() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { monthly_income_cents?: number; currency?: string }) =>
+      apiFetch<User>('/me', { method: 'PATCH', body: json(body) }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['insights'] }),
   });
 }
 
