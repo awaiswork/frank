@@ -11,6 +11,21 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: frank
+          POSTGRES_PASSWORD: frank
+          POSTGRES_DB: frank
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U frank -d frank"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://frank:frank@localhost:5432/frank
+      TEST_DATABASE_URL: postgresql+psycopg://frank:frank@localhost:5432/frank_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -21,6 +36,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy app tests
+      - run: uv run alembic upgrade head # migration applies cleanly to real Postgres
       - run: uv run pytest
 
   frontend:
