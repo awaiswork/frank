@@ -7,6 +7,7 @@ import type {
   Category,
   Goal,
   InsightsSummary,
+  NlDraft,
   Transaction,
   TransactionCreate,
 } from './types';
@@ -54,6 +55,15 @@ export function useCreateTransaction() {
     mutationFn: (body: TransactionCreate) =>
       apiFetch<Transaction>('/transactions', { method: 'POST', body: json(body) }),
     onSuccess: () => invalidateMoney(client),
+  });
+}
+
+// NL capture: parse only — never writes, so no invalidation. The user confirms
+// each draft through useCreateTransaction.
+export function useParseNl() {
+  return useMutation({
+    mutationFn: (text: string) =>
+      apiFetch<NlDraft[]>('/nl/parse', { method: 'POST', body: json({ text }) }),
   });
 }
 

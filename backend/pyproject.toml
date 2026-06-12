@@ -13,6 +13,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "bcrypt>=4.1",
     "pyjwt>=2.9",
+    "anthropic>=0.109.1",
 ]
 
 [dependency-groups]

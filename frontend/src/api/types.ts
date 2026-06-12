@@ -100,3 +100,15 @@ export interface InsightsSummary {
   daily_burn: BurnRate;
   month_over_month: CategoryMoM[];
 }
+
+/** A draft from POST /nl/parse — not persisted; the user confirms it. */
+export interface NlDraft {
+  kind: Kind;
+  amount_cents: number;
+  description: string;
+  merchant: string | null;
+  occurred_on: string;
+  category_id: string | null;
+  category_name: string | null;
+  confidence: number;
+}

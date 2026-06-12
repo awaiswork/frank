@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useBudgets, useInsights } from '../api/hooks';
 import { BudgetBar } from '../components/BudgetBar';
+import { Capture } from '../components/Capture';
 import { Money } from '../components/Money';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { Card, EmptyState, SectionLabel } from '../components/ui';
@@ -20,6 +21,8 @@ export function Home() {
         <h1 className="font-display text-[22px] font-bold text-ink">Home</h1>
         <MonthSwitcher month={month} onChange={setMonth} />
       </div>
+
+      <Capture />
 
       <Card className="text-center">
         <SectionLabel>Safe to spend</SectionLabel>

@@ -190,3 +190,23 @@ class InsightsSummaryOut(BaseModel):
     spend_by_category: list[CategorySpendOut]
     daily_burn: BurnRateOut
     month_over_month: list[CategoryMoMOut]
+
+
+# --- NL capture (M3) ---------------------------------------------------------
+
+
+class NlParseIn(BaseModel):
+    text: str = Field(min_length=1, max_length=500)  # §7a input limit
+
+
+class ParsedTransactionOut(BaseModel):
+    """A draft returned by /nl/parse — never persisted; the client confirms it."""
+
+    kind: Kind
+    amount_cents: int
+    description: str
+    merchant: str | None
+    occurred_on: dt.date
+    category_id: uuid.UUID | None
+    category_name: str | None
+    confidence: float

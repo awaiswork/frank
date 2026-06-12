@@ -1,16 +1,11 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import {
-  useCategories,
-  useCreateTransaction,
-  useDeleteTransaction,
-  useTransactions,
-} from '../api/hooks';
-import type { Category, Kind } from '../api/types';
+import { useMemo, useState } from 'react';
+import { useCategories, useDeleteTransaction, useTransactions } from '../api/hooks';
+import type { Category } from '../api/types';
+import { Capture } from '../components/Capture';
 import { Money } from '../components/Money';
 import { MonthSwitcher } from '../components/MonthSwitcher';
-import { Button, Card, EmptyState, Field, SectionLabel, TextInput } from '../components/ui';
-import { currentMonth, todayISO } from '../lib/date';
-import { parseAmountToCents } from '../lib/money';
+import { Card, EmptyState, SectionLabel, TextInput } from '../components/ui';
+import { currentMonth } from '../lib/date';
 
 export function Transactions() {
   const [month, setMonth] = useState(currentMonth());
@@ -31,13 +26,13 @@ export function Transactions() {
         <MonthSwitcher month={month} onChange={setMonth} />
       </div>
 
-      <AddTransaction categories={categories.data ?? []} />
+      <Capture />
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <SectionLabel>This month</SectionLabel>
           <TextInput
-            className="h-9 max-w-[200px] text-[14px]"
+            className="h-9 max-w-50 text-[14px]"
             placeholder="Search…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -80,7 +75,7 @@ export function Transactions() {
         ) : (
           <EmptyState
             title={q ? 'No matches' : 'No transactions yet'}
-            hint={q ? 'Try a different search.' : 'Add your first one above.'}
+            hint={q ? 'Try a different search.' : 'Capture your first one above.'}
           />
         )}
       </section>
@@ -100,108 +95,5 @@ function DeleteButton({ id }: { id: string }) {
     >
       ×
     </button>
-  );
-}
-
-function AddTransaction({ categories }: { categories: Category[] }) {
-  const create = useCreateTransaction();
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [kind, setKind] = useState<Kind>('expense');
-  const [occurredOn, setOccurredOn] = useState(todayISO());
-  const [error, setError] = useState<string | null>(null);
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    const cents = parseAmountToCents(amount);
-    if (cents === null) {
-      setError('Enter an amount like 12,50');
-      return;
-    }
-    if (!description.trim()) {
-      setError('Add a short description');
-      return;
-    }
-    setError(null);
-    create.mutate(
-      {
-        amount_cents: cents,
-        description: description.trim(),
-        kind,
-        occurred_on: occurredOn,
-        category_id: categoryId || null,
-      },
-      {
-        onSuccess: () => {
-          setAmount('');
-          setDescription('');
-          setCategoryId('');
-        },
-      },
-    );
-  }
-
-  const selectClass = 'h-11 rounded-input border border-line-2 bg-field px-3 text-[16px] text-ink';
-
-  return (
-    <Card>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Field label="Amount">
-            <TextInput
-              inputMode="decimal"
-              placeholder="12,50"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </Field>
-          <Field label="Date">
-            <TextInput
-              type="date"
-              value={occurredOn}
-              onChange={(e) => setOccurredOn(e.target.value)}
-            />
-          </Field>
-          <Field label="Type">
-            <select
-              className={selectClass}
-              value={kind}
-              onChange={(e) => setKind(e.target.value as Kind)}
-            >
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
-            </select>
-          </Field>
-          <Field label="Category">
-            <select
-              className={selectClass}
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-            >
-              <option value="">None</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        <Field label="Description">
-          <TextInput
-            placeholder="Lunch at Hesburger"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </Field>
-        {error && <p className="text-[13px] text-over">{error}</p>}
-        <div className="flex justify-end">
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? 'Saving…' : 'Save transaction'}
-          </Button>
-        </div>
-      </form>
-    </Card>
   );
 }
