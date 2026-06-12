@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch, json } from './client';
 import type {
+  AdviceHistory,
   BudgetActual,
   Category,
   Goal,
@@ -64,6 +65,25 @@ export function useParseNl() {
   return useMutation({
     mutationFn: (text: string) =>
       apiFetch<NlDraft[]>('/nl/parse', { method: 'POST', body: json({ text }) }),
+  });
+}
+
+export function useAdviceHistory() {
+  return useQuery({
+    queryKey: ['advice'],
+    queryFn: () => apiFetch<AdviceHistory[]>('/advisor/history'),
+  });
+}
+
+export function useSetFollowed() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, followed }: { id: string; followed: boolean }) =>
+      apiFetch<AdviceHistory>(`/advisor/${id}`, {
+        method: 'PATCH',
+        body: json({ user_followed: followed }),
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['advice'] }),
   });
 }
 

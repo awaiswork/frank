@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { Layout } from './components/Layout';
+import { Advisor } from './pages/Advisor';
 import { Budgets } from './pages/Budgets';
 import { Goals } from './pages/Goals';
 import { Home } from './pages/Home';
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/goals" element={<Goals />} />
+          <Route path="/advisor" element={<Advisor />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

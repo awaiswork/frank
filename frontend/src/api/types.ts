@@ -112,3 +112,32 @@ export interface NlDraft {
   category_name: string | null;
   confidence: number;
 }
+
+// --- Advisor (M4) ---
+export type VerdictKind = 'go' | 'wait' | 'skip' | 'your_call';
+
+export interface Evidence {
+  label: string;
+  value: string;
+}
+
+/** The `verdict` SSE event payload from /advisor/ask. */
+export interface AdviceVerdict {
+  id: string;
+  verdict: VerdictKind;
+  headline: string;
+  evidence: Evidence[];
+  reasoning: string;
+  disclaimer: string;
+}
+
+export interface AdviceHistory {
+  id: string;
+  question: string;
+  amount_cents: number | null;
+  verdict: VerdictKind | null;
+  reasoning: string;
+  evidence: Evidence[];
+  user_followed: boolean | null;
+  created_at: string;
+}

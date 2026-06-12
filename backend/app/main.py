@@ -4,7 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, budgets, categories, goals, insights, nl, transactions
+from app.routers import (
+    advisor,
+    auth,
+    budgets,
+    categories,
+    goals,
+    insights,
+    nl,
+    transactions,
+)
 
 
 def _configure_logging() -> None:
@@ -45,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(goals.router)
     app.include_router(insights.router)
     app.include_router(nl.router)
+    app.include_router(advisor.router)
     return app
 
 

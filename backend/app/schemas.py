@@ -210,3 +210,35 @@ class ParsedTransactionOut(BaseModel):
     category_id: uuid.UUID | None
     category_name: str | None
     confidence: float
+
+
+# --- Advisor (M4) ------------------------------------------------------------
+
+Verdict = Literal["go", "wait", "skip", "your_call"]
+
+
+class AdvisorAskIn(BaseModel):
+    question: str = Field(min_length=1, max_length=300)  # §7a input limit
+    amount_cents: int | None = Field(default=None, ge=0)
+
+
+class EvidenceOut(BaseModel):
+    label: str
+    value: str
+
+
+class AdviceHistoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    question: str
+    amount_cents: int | None
+    verdict: Verdict | None
+    reasoning: str
+    evidence: list[EvidenceOut]
+    user_followed: bool | None
+    created_at: dt.datetime
+
+
+class AdvisorFollowedIn(BaseModel):
+    user_followed: bool

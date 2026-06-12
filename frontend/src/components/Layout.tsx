@@ -6,6 +6,7 @@ const LINKS: ReadonlyArray<readonly [string, string]> = [
   ['/transactions', 'Transactions'],
   ['/budgets', 'Budgets'],
   ['/goals', 'Goals'],
+  ['/advisor', 'Ask Frank'],
 ];
 
 export function Layout() {
