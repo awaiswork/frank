@@ -22,6 +22,18 @@ export function formatMoney(cents: number, { signed = false }: { signed?: boolea
   return `${sign}${grouped},${frac}${NBSP}€`;
 }
 
+/** Split into euros (thin-space grouped) and cents for the big hero figure. */
+export function moneyParts(cents: number): { negative: boolean; euros: string; cents: string } {
+  const negative = cents < 0;
+  const abs = Math.abs(Math.round(cents));
+  const euros = Math.floor(abs / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, THIN_SPACE);
+  return { negative, euros, cents: (abs % 100).toString().padStart(2, '0') };
+}
+
+export const MINUS_SIGN = MINUS;
+
 /**
  * Parse a user-typed amount ("12,50", "12.50", "1 200") into integer cents.
  * Returns null for anything that isn't a positive amount. (JS `\s` already

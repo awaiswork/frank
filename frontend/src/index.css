@@ -25,6 +25,13 @@
   --skip-soft: #15212e;
   --call-soft: #211b31;
   --over-soft: #2c1c12;
+  --cat-grocery: #9bc85f;
+  --cat-dining: #e8995a;
+  --cat-transport: #62b0ce;
+  --cat-fun: #db85c6;
+  --cat-bills: #9c97b4;
+  --cat-savings: #e7c24b;
+  --cat-health: #e58ba0;
   --shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 18px 40px -24px rgba(0, 0, 0, 0.7);
 }
 
@@ -52,7 +59,14 @@
   --skip-soft: #e8edf6;
   --call-soft: #ece8f8;
   --over-soft: #f7e7df;
-  --shadow: 0 1px 0 rgba(0, 0, 0, 0.02), 0 18px 40px -24px rgba(60, 50, 30, 0.25);
+  --cat-grocery: #5e8c2e;
+  --cat-dining: #bf6a2c;
+  --cat-transport: #2a7c9c;
+  --cat-fun: #b4519e;
+  --cat-bills: #67637f;
+  --cat-savings: #9c7507;
+  --cat-health: #b14a5c;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.6), 0 22px 44px -28px rgba(40, 34, 20, 0.35);
 }
 
 /* --- Tailwind theme: map semantic tokens to the runtime palette vars -------- */
@@ -106,11 +120,17 @@
   .num {
     font-family: var(--font-num);
     font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.01em;
   }
 
   :where(button, a, input, select, textarea):focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--focus) 30%, transparent);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -118,12 +138,13 @@
     *::before,
     *::after {
       animation-duration: 0.001ms !important;
+      animation-delay: 0ms !important;
       transition-duration: 0.001ms !important;
     }
   }
 }
 
-/* --- Motion (durations/eases per design §motion) ---------------------------- */
+/* --- Motion (design §motion) ------------------------------------------------ */
 @keyframes barGrow {
   from {
     transform: scaleX(0);
@@ -132,36 +153,68 @@
     transform: scaleX(1);
   }
 }
-
 @keyframes fadeUp {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-
-.animate-bar-grow {
-  transform-origin: left;
-  animation: barGrow 0.8s var(--ease-frank) both;
+@keyframes fieldIn {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
-
-.animate-fade-up {
-  animation: fadeUp 0.36s var(--ease-frank) both;
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
-
-/* Verdict stamp: rotates in and settles at -8deg (design §motion). */
+@keyframes tick {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
 @keyframes stampIn {
   0% {
     opacity: 0;
-    transform: rotate(10deg) scale(0.6);
+    transform: rotate(-26deg) scale(1.7);
   }
   60% {
     opacity: 1;
-    transform: rotate(-12deg) scale(1.06);
+    transform: rotate(-6deg) scale(0.94);
   }
   100% {
     opacity: 1;
@@ -169,6 +222,28 @@
   }
 }
 
+.animate-bar-grow {
+  transform-origin: left;
+  animation: barGrow 0.8s var(--ease-frank) both;
+}
+.animate-fade-up {
+  animation: fadeUp 0.4s var(--ease-frank) both;
+}
+.animate-field-in {
+  animation: fieldIn 0.5s var(--ease-frank) both;
+}
+.animate-pop {
+  animation: pop 0.3s var(--ease-frank) both;
+}
+.animate-tick {
+  animation: tick 0.25s var(--ease-frank) both;
+}
+.animate-spin-fast {
+  animation: spin 0.7s linear infinite;
+}
+.animate-breathe {
+  animation: breathe 3.4s ease-in-out infinite;
+}
 .animate-stamp {
   animation: stampIn 0.6s var(--ease-frank) both;
 }

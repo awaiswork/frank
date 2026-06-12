@@ -35,3 +35,16 @@ export function shiftMonth(month: string, delta: number): string {
   const d = new Date(Date.UTC(year, mon - 1 + delta, 1));
   return d.toISOString().slice(0, 7);
 }
+
+/** `2026-06-12` -> "today" / "yesterday" / "3 days ago" / "9 Jun". */
+export function relativeDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const that = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((today.getTime() - that.getTime()) / 86_400_000);
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'yesterday';
+  if (diff > 1 && diff < 7) return `${diff} days ago`;
+  return that.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}

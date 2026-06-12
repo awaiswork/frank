@@ -6,6 +6,12 @@ import './index.css';
 import App from './App';
 import { AuthProvider } from './auth/AuthProvider';
 
+// Restore the saved theme before first paint (avoids a flash).
+const savedTheme = localStorage.getItem('frank-theme');
+if (savedTheme === 'light' || savedTheme === 'dark') {
+  document.documentElement.setAttribute('data-theme', savedTheme);
+}
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });

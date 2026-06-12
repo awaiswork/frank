@@ -1,116 +1,222 @@
-import { useState } from 'react';
-import { useBudgets, useInsights } from '../api/hooks';
+import { useBudgets, useCategories, useInsights, useTransactions } from '../api/hooks';
+import type { Category } from '../api/types';
 import { BudgetBar } from '../components/BudgetBar';
 import { Capture } from '../components/Capture';
+import { CategoryAvatar } from '../components/CategoryAvatar';
+import { AiBadge, BreathingDot } from '../components/bits';
 import { Money } from '../components/Money';
-import { MonthSwitcher } from '../components/MonthSwitcher';
-import { Card, EmptyState, SectionLabel } from '../components/ui';
-import { currentMonth } from '../lib/date';
+import { Card, EmptyState } from '../components/ui';
+import { categoryColor } from '../lib/categoryColor';
+import { currentMonth, relativeDay } from '../lib/date';
+import { formatMoney, moneyParts } from '../lib/money';
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
 
 export function Home() {
-  const [month, setMonth] = useState(currentMonth());
+  const month = currentMonth();
   const insights = useInsights(month);
   const budgets = useBudgets(month);
+  const transactions = useTransactions({ month });
+  const categories = useCategories();
+
+  const catById = new Map<string, Category>((categories.data ?? []).map((c) => [c.id, c]));
+  const catName = (id: string | null) => (id ? (catById.get(id)?.name ?? null) : null);
 
   const safe = insights.data?.safe_to_spend;
-  const categories = insights.data?.spend_by_category ?? [];
+  const parts = safe ? moneyParts(safe.safe_to_spend_cents) : null;
+
+  const today = new Date();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysLeft = daysInMonth - today.getDate();
+  const elapsedPct = (today.getDate() / daysInMonth) * 100;
+  const monthName = today.toLocaleDateString('en-GB', { month: 'long' });
+  const dateLong = today.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+  const perDay = safe && daysLeft > 0 ? Math.max(0, safe.safe_to_spend_cents) / daysLeft : 0;
+
+  const totalDelta = (insights.data?.month_over_month ?? []).reduce((a, m) => a + m.delta_cents, 0);
+  const aheadNote =
+    totalDelta < 0
+      ? `${formatMoney(-totalDelta)} ahead of last month`
+      : totalDelta > 0
+        ? `${formatMoney(totalDelta)} more than last month`
+        : `${daysLeft} days left this month`;
+
+  const recent = (transactions.data ?? []).slice(0, 5);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-[22px] font-bold text-ink">Home</h1>
-        <MonthSwitcher month={month} onChange={setMonth} />
+    <div className="animate-fade-up flex flex-col gap-[18px]">
+      {/* Header */}
+      <div className="flex items-end justify-between gap-5">
+        <div>
+          <div className="text-[14px] font-medium text-muted">{greeting()}</div>
+          <h1 className="mt-0.5 font-display text-[26px] font-semibold tracking-[-0.02em] text-ink">
+            {dateLong}
+          </h1>
+        </div>
+        <div className="flex items-center gap-[7px]">
+          <BreathingDot color={totalDelta <= 0 ? 'var(--go)' : 'var(--wait)'} />
+          <span className="text-[13px] text-muted">{aheadNote}</span>
+        </div>
       </div>
 
-      <Capture />
-
-      <Card className="text-center">
-        <SectionLabel>Safe to spend</SectionLabel>
-        {safe ? (
+      {/* Safe-to-spend hero */}
+      <Card className="px-8 py-[30px]">
+        <div className="text-[13px] font-semibold tracking-[0.12em] text-muted uppercase">
+          Safe to spend
+        </div>
+        {parts ? (
           <>
-            <Money
-              cents={safe.safe_to_spend_cents}
-              tone={safe.safe_to_spend_cents < 0 ? 'over' : 'go'}
-              className="mt-2 block text-[64px] leading-none font-semibold"
-            />
-            <div className="mt-5 flex justify-center gap-6 text-[13px] text-muted">
-              <Stat label="Income" cents={safe.income_cents} />
-              <Stat label="Spent" cents={safe.spent_cents} />
-              <Stat label="Budgeted left" cents={safe.remaining_budgets_cents} />
-              <Stat label="To goals" cents={safe.goal_contributions_cents} />
+            <div className="num mt-2 flex items-start gap-0.5 leading-[0.9]">
+              <span
+                className="text-[84px] font-semibold tracking-[-0.03em]"
+                style={{ color: parts.negative ? 'var(--over)' : 'var(--ink)' }}
+              >
+                {parts.negative ? '−' : ''}
+                {parts.euros}
+              </span>
+              <span className="mt-1.5 text-[38px] font-semibold text-ink-2">,{parts.cents}</span>
+              <span className="mt-[9px] ml-1.5 text-[32px] font-medium text-muted">€</span>
             </div>
+            <div className="mt-1.5 text-[14.5px] text-ink-2">
+              for the rest of {monthName} · <span className="num">{daysLeft}</span> days to go.{' '}
+              {perDay > 0 && (
+                <span className="text-muted">
+                  That's about <Money cents={perDay} tone="muted" className="!text-[14.5px]" /> a
+                  day.
+                </span>
+              )}
+            </div>
+            <MonthPulse elapsedPct={elapsedPct} daysInMonth={daysInMonth} monthName={monthName} />
           </>
         ) : (
           <p className="mt-3 text-muted">{insights.isError ? 'Could not load.' : 'Loading…'}</p>
         )}
       </Card>
 
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Budgets this month</SectionLabel>
-        {budgets.data && budgets.data.length > 0 ? (
-          <Card className="flex flex-col gap-4">
-            {budgets.data.map((b) => (
-              <div key={b.category_id} className="flex flex-col gap-2">
-                <div className="flex items-baseline justify-between text-[14px]">
-                  <span className="flex items-center gap-2 font-medium text-ink">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: b.color ?? 'var(--muted)' }}
-                    />
-                    {b.category_name}
-                  </span>
-                  <span className="text-muted">
-                    <Money cents={b.spent_cents} /> / <Money cents={b.limit_cents} tone="muted" />
-                  </span>
-                </div>
-                <BudgetBar budget={b} />
-              </div>
-            ))}
-          </Card>
-        ) : (
-          <EmptyState
-            title="No budgets yet"
-            hint="Set a monthly limit on the Budgets tab to track your pace."
-          />
-        )}
-      </section>
+      <Capture />
 
-      <section className="flex flex-col gap-3">
-        <SectionLabel>Where it went</SectionLabel>
-        {categories.length > 0 ? (
-          <Card className="flex flex-col gap-3">
-            {categories.map((c) => (
-              <div
-                key={c.category_id ?? 'uncategorised'}
-                className="flex items-center justify-between text-[14px]"
-              >
-                <span className="flex items-center gap-2 text-ink-2">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: c.color ?? 'var(--muted)' }}
-                  />
-                  {c.category_name ?? 'Uncategorised'}
-                </span>
-                <Money cents={c.spent_cents} />
-              </div>
-            ))}
-          </Card>
-        ) : (
-          <EmptyState
-            title="Nothing spent this month"
-            hint="Log a transaction to see the breakdown."
-          />
-        )}
-      </section>
+      {/* Recent + Budgets glance */}
+      <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1.15fr_1fr]">
+        <Card className="p-0">
+          <div className="flex items-center justify-between px-[22px] pt-5 pb-1">
+            <h2 className="text-[15px] font-semibold text-ink">Recent</h2>
+            <span className="text-[13px] text-muted">last few</span>
+          </div>
+          <div className="px-[22px] pb-2">
+            {recent.length > 0 ? (
+              recent.map((t) => {
+                const income = t.kind === 'income';
+                const label = t.merchant ?? t.description;
+                return (
+                  <div
+                    key={t.id}
+                    className="flex items-center gap-[13px] border-b border-line py-3 last:border-0"
+                  >
+                    <CategoryAvatar
+                      initial={label.charAt(0).toUpperCase()}
+                      category={catName(t.category_id)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-[7px] text-[14.5px] font-semibold text-ink">
+                        <span className="truncate">{label}</span>
+                        {t.source === 'nl_parse' && <AiBadge />}
+                      </div>
+                      <div className="text-[12.5px] text-muted">
+                        {catName(t.category_id) ?? 'Uncategorised'} · {relativeDay(t.occurred_on)}
+                      </div>
+                    </div>
+                    <Money
+                      cents={income ? t.amount_cents : -t.amount_cents}
+                      signed={income}
+                      tone={income ? 'go' : 'default'}
+                      className="!text-[16px] font-semibold"
+                    />
+                  </div>
+                );
+              })
+            ) : (
+              <p className="py-6 text-center text-[14px] text-muted">
+                No transactions yet this month.
+              </p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-0">
+          <div className="flex items-center justify-between px-[22px] pt-5 pb-3.5">
+            <h2 className="text-[15px] font-semibold text-ink">Budgets</h2>
+            {budgets.data && budgets.data.some((b) => !b.on_track) && (
+              <span className="text-[12.5px] font-semibold text-wait">running hot</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-4 px-[22px] pb-5">
+            {budgets.data && budgets.data.length > 0 ? (
+              budgets.data.slice(0, 4).map((b) => (
+                <div key={b.category_id}>
+                  <div className="mb-[7px] flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+                      <span
+                        className="h-[9px] w-[9px] rounded-full"
+                        style={{ background: categoryColor(b.category_name) }}
+                      />
+                      {b.category_name}
+                    </div>
+                    <div className="num text-[13px] text-muted">
+                      <Money cents={b.spent_cents} tone="muted" className="!text-[13px]" /> /{' '}
+                      <Money cents={b.limit_cents} tone="muted" className="!text-[13px]" />
+                    </div>
+                  </div>
+                  <BudgetBar budget={b} />
+                </div>
+              ))
+            ) : (
+              <EmptyState title="No budgets yet" hint="Set monthly limits on the Budgets tab." />
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
 
-function Stat({ label, cents }: { label: string; cents: number }) {
+function MonthPulse({
+  elapsedPct,
+  daysInMonth,
+  monthName,
+}: {
+  elapsedPct: number;
+  daysInMonth: number;
+  monthName: string;
+}) {
   return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="uppercase tracking-[0.08em]">{label}</span>
-      <Money cents={cents} tone="muted" className="text-[14px]" />
+    <div className="mt-5">
+      <div className="relative h-1.5 overflow-hidden rounded-full bg-inset">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full"
+          style={{
+            width: `${elapsedPct}%`,
+            background: 'linear-gradient(90deg, var(--line-2), var(--ink-2))',
+          }}
+        />
+        <div
+          className="absolute -top-[3px] h-3 w-0.5 rounded-sm bg-ink"
+          style={{ left: `${elapsedPct}%` }}
+        />
+      </div>
+      <div className="mt-[7px] flex justify-between text-[11.5px] text-muted">
+        <span>{monthName} 1</span>
+        <span>today</span>
+        <span>
+          {monthName} {daysInMonth}
+        </span>
+      </div>
     </div>
   );
 }
