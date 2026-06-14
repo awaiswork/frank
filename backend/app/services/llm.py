@@ -23,6 +23,7 @@ settings = get_settings()
 # Hard caps (§7a) — keep cost bounded.
 PARSER_MAX_TOKENS = 1000
 ADVISOR_MAX_TOKENS = 1200
+DAILY_MAX_TOKENS = 320
 
 _TIMEOUT_SECONDS = 20.0
 _MAX_RETRIES = 2

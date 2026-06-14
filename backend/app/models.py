@@ -129,6 +129,31 @@ class GoalContribution(UUIDPk, Timestamped, Base):
     occurred_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
 
 
+class DailyNote(UUIDPk, Timestamped, Base):
+    """Frank's once-a-day check-in (the daily hook). One row per user per day; the
+    row's existence also *is* the "checked in today" signal the streak is built on."""
+
+    __tablename__ = "daily_notes"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    note_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    mood: Mapped[str] = mapped_column(Text, nullable=False)  # 'go' | 'wait' | 'over'
+    headline: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    context_snapshot: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("mood IN ('go','wait','over')", name="ck_daily_notes_mood"),
+        UniqueConstraint("user_id", "note_date", name="uq_daily_notes_user_date"),
+        Index("ix_daily_notes_user_date", "user_id", text("note_date DESC")),
+    )
+
+
 class AdviceRequest(UUIDPk, Timestamped, Base):
     __tablename__ = "advice_requests"
 

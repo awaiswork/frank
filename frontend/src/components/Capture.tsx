@@ -183,6 +183,7 @@ function DraftCard({
   const [categoryId, setCategoryId] = useState(draft.category_id ?? '');
   const [occurredOn, setOccurredOn] = useState(draft.occurred_on);
   const [err, setErr] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const conf = confidence(draft.confidence);
   const selected = categories.find((c) => c.id === categoryId) ?? null;
@@ -204,7 +205,42 @@ function DraftCard({
         occurred_on: occurredOn,
         category_id: categoryId || null,
       },
-      { onSuccess: onDone },
+      {
+        onSuccess: () => {
+          setSaved(true);
+          window.setTimeout(onDone, 900);
+        },
+      },
+    );
+  }
+
+  if (saved) {
+    return (
+      <div
+        className="animate-pop flex items-center gap-3 rounded-card border border-line-2 bg-surface px-[18px] py-4"
+        style={{ boxShadow: 'var(--shadow)' }}
+      >
+        <span
+          className="animate-tick grid h-7 w-7 place-items-center rounded-full text-go"
+          style={{ background: 'var(--go-soft)' }}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </span>
+        <span className="text-[14.5px] font-semibold text-ink">
+          Logged. <span className="font-normal text-muted">Frank's got it.</span>
+        </span>
+      </div>
     );
   }
 

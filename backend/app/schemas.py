@@ -242,3 +242,16 @@ class AdviceHistoryOut(BaseModel):
 
 class AdvisorFollowedIn(BaseModel):
     user_followed: bool
+
+
+# --- Daily note (the hook) ---------------------------------------------------
+
+Mood = Literal["go", "wait", "over"]
+
+
+class DailyNoteOut(BaseModel):
+    date: dt.date
+    mood: Mood
+    headline: str
+    note: str
+    streak: int

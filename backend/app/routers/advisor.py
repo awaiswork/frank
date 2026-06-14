@@ -12,9 +12,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
-from app.models import AdviceRequest
-from app.schemas import AdviceHistoryOut, AdvisorAskIn, AdvisorFollowedIn
-from app.services import advisor
+from app.models import AdviceRequest, DailyNote
+from app.schemas import AdviceHistoryOut, AdvisorAskIn, AdvisorFollowedIn, DailyNoteOut
+from app.services import advisor, daily
 
 router = APIRouter(prefix="/advisor", tags=["advisor"])
 
@@ -73,6 +73,46 @@ async def ask(body: AdvisorAskIn, user: CurrentUser, db: DbSession) -> Streaming
         yield _sse("done", {})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@router.get("/daily", response_model=DailyNoteOut)
+async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
+    """Frank's check-in for today — generated once per day, then served from cache."""
+    today = dt.date.today()
+    row = db.scalar(
+        select(DailyNote).where(DailyNote.user_id == user.id, DailyNote.note_date == today)
+    )
+    if row is None:
+        context = advisor.build_context(db, user, today)
+        mood = daily.compute_mood(context, today)
+        try:
+            headline, note, usage = await daily.generate(context, mood)
+            model: str | None = daily.DAILY_MODEL
+        except daily.DailyError:
+            headline, note = daily.fallback(mood)
+            usage = {}
+            model = None
+        row = DailyNote(
+            user_id=user.id,
+            note_date=today,
+            mood=mood,
+            headline=headline,
+            note=note,
+            context_snapshot=context,
+            model=model,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+        )
+        db.add(row)
+        db.commit()
+
+    return DailyNoteOut(
+        date=row.note_date,
+        mood=row.mood,  # type: ignore[arg-type]
+        headline=row.headline,
+        note=row.note,
+        streak=daily.current_streak(db, user.id, today),
+    )
 
 
 @router.get("/history", response_model=list[AdviceHistoryOut])

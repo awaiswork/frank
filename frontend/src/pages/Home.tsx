@@ -3,17 +3,14 @@ import type { Category } from '../api/types';
 import { BudgetBar } from '../components/BudgetBar';
 import { Capture } from '../components/Capture';
 import { CategoryAvatar } from '../components/CategoryAvatar';
-import { AiBadge, BreathingDot } from '../components/bits';
+import { FrankDaily } from '../components/FrankDaily';
+import { AiBadge } from '../components/bits';
 import { Money } from '../components/Money';
 import { Card, EmptyState } from '../components/ui';
 import { categoryColor } from '../lib/categoryColor';
 import { currentMonth, relativeDay } from '../lib/date';
-import { formatMoney, moneyParts } from '../lib/money';
-
-function greeting(): string {
-  const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-}
+import { moneyParts } from '../lib/money';
+import { useCountUp } from '../lib/useCountUp';
 
 export function Home() {
   const month = currentMonth();
@@ -26,45 +23,22 @@ export function Home() {
   const catName = (id: string | null) => (id ? (catById.get(id)?.name ?? null) : null);
 
   const safe = insights.data?.safe_to_spend;
-  const parts = safe ? moneyParts(safe.safe_to_spend_cents) : null;
+  const safeCents = safe?.safe_to_spend_cents ?? 0;
+  const animatedCents = useCountUp(safeCents);
+  const parts = safe ? moneyParts(animatedCents) : null;
 
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const daysLeft = daysInMonth - today.getDate();
   const elapsedPct = (today.getDate() / daysInMonth) * 100;
   const monthName = today.toLocaleDateString('en-GB', { month: 'long' });
-  const dateLong = today.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
   const perDay = safe && daysLeft > 0 ? Math.max(0, safe.safe_to_spend_cents) / daysLeft : 0;
-
-  const totalDelta = (insights.data?.month_over_month ?? []).reduce((a, m) => a + m.delta_cents, 0);
-  const aheadNote =
-    totalDelta < 0
-      ? `${formatMoney(-totalDelta)} ahead of last month`
-      : totalDelta > 0
-        ? `${formatMoney(totalDelta)} more than last month`
-        : `${daysLeft} days left this month`;
 
   const recent = (transactions.data ?? []).slice(0, 5);
 
   return (
     <div className="animate-fade-up flex flex-col gap-[18px]">
-      {/* Header */}
-      <div className="flex items-end justify-between gap-5">
-        <div>
-          <div className="text-[14px] font-medium text-muted">{greeting()}</div>
-          <h1 className="mt-0.5 font-display text-[26px] font-semibold tracking-[-0.02em] text-ink">
-            {dateLong}
-          </h1>
-        </div>
-        <div className="flex items-center gap-[7px]">
-          <BreathingDot color={totalDelta <= 0 ? 'var(--go)' : 'var(--wait)'} />
-          <span className="text-[13px] text-muted">{aheadNote}</span>
-        </div>
-      </div>
+      <FrankDaily />
 
       {/* Safe-to-spend hero */}
       <Card className="px-8 py-[30px]">

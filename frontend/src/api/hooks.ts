@@ -6,6 +6,7 @@ import type {
   AdviceHistory,
   BudgetActual,
   Category,
+  DailyNote,
   Goal,
   InsightsSummary,
   NlDraft,
@@ -75,6 +76,16 @@ export function useUpdateMe() {
     mutationFn: (body: { monthly_income_cents?: number; currency?: string }) =>
       apiFetch<User>('/me', { method: 'PATCH', body: json(body) }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['insights'] }),
+  });
+}
+
+// Frank's daily check-in. Generated once per day server-side, so it's safe to keep
+// fresh for the session — we don't want a new note on every home visit.
+export function useDailyNote() {
+  return useQuery({
+    queryKey: ['daily'],
+    queryFn: () => apiFetch<DailyNote>('/advisor/daily'),
+    staleTime: 60 * 60 * 1000,
   });
 }
 

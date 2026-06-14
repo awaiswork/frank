@@ -1,9 +1,11 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { apiFetch, json, refreshAccessToken, setAccessToken } from '../api/client';
 import type { TokenOut, User } from '../api/types';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUserState] = useState<User | null>(null);
 
@@ -35,6 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const authenticate = useCallback(
     async (path: '/auth/login' | '/auth/register', email: string, password: string) => {
+      // Drop any cached data from a prior session so one account never sees
+      // another's (e.g. Frank's daily note, which we keep fresh for an hour).
+      queryClient.clear();
       const token = await apiFetch<TokenOut>(path, {
         method: 'POST',
         body: json({ email, password }),
@@ -42,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccessToken(token.access_token);
       await loadUser();
     },
-    [loadUser],
+    [loadUser, queryClient],
   );
 
   const value = useMemo<AuthContextValue>(
@@ -55,10 +60,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAccessToken(null);
         setUserState(null);
         setStatus('anon');
+        queryClient.clear();
       },
       setUser: setUserState,
     }),
-    [status, user, authenticate],
+    [status, user, authenticate, queryClient],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

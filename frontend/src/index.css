@@ -247,3 +247,51 @@
 .animate-stamp {
   animation: stampIn 0.6s var(--ease-frank) both;
 }
+
+/* --- Ambient field (living interface) -------------------------------------- */
+/* A soft glow behind everything, tinted to the user's "money weather". Three
+   layers cross-fade on [data-mood] so a change melts in. Sits behind content
+   (z-index 0 on a fixed root that the app stacks above). */
+@keyframes drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1.03);
+  }
+  to {
+    transform: translate3d(2%, 1.5%, 0) scale(1.1);
+  }
+}
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ambient__layer {
+  position: absolute;
+  inset: -25%;
+  opacity: 0;
+  transition: opacity 1.8s var(--ease-frank);
+  background:
+    radial-gradient(38% 36% at 16% 14%, var(--glow), transparent 60%),
+    radial-gradient(42% 40% at 88% 86%, var(--glow), transparent 62%);
+  animation: drift 32s ease-in-out infinite alternate;
+}
+.ambient__go {
+  --glow: color-mix(in oklab, var(--go) 20%, transparent);
+}
+.ambient__wait {
+  --glow: color-mix(in oklab, var(--wait) 22%, transparent);
+}
+.ambient__over {
+  --glow: color-mix(in oklab, var(--over) 24%, transparent);
+}
+[data-mood='go'] .ambient__go,
+[data-mood='wait'] .ambient__wait,
+[data-mood='over'] .ambient__over {
+  opacity: 1;
+}
+:root:not([data-mood]) .ambient__go {
+  opacity: 1;
+}

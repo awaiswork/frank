@@ -141,3 +141,14 @@ export interface AdviceHistory {
   user_followed: boolean | null;
   created_at: string;
 }
+
+// --- Daily note (the hook) ---
+export type DayMood = 'go' | 'wait' | 'over';
+
+export interface DailyNote {
+  date: string; // YYYY-MM-DD
+  mood: DayMood;
+  headline: string;
+  note: string;
+  streak: number;
+}
