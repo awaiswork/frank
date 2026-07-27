@@ -85,20 +85,39 @@ CI runs the same checks on every push (`.github/workflows/ci.yml`).
 
 ## Deployment
 
-The API runs on Railway from `backend/Dockerfile` (managed Postgres attached); the
-frontend is a static Vite build on Vercel. Both deploy from `main` on push. Migrations
-run as part of the container's start command, so a deploy can never serve against a
-stale schema.
+Three free services, no card charged: the API on **Koyeb** from `backend/Dockerfile`,
+Postgres on **Neon**, and the frontend as a static Vite build on **Vercel**. All three
+deploy from `main` on push. Migrations run as part of the container's start command, so
+a deploy can never serve against a stale schema.
 
-**Railway** — service root directory `backend`, Dockerfile builder.
+Both Koyeb and Neon scale to zero when idle — the free plan sleeps the service after an
+hour without traffic (Koyeb's sub-second "light sleep" is paid-only), so a first visit
+after a quiet spell waits for the instance to wake, the start command to run migrations,
+and Neon to spin up. Expect single-digit seconds, not the 30–60 s a Render free service
+costs. `pool_pre_ping` in `app/db.py` already handles connections dropped while the
+database slept.
+
+Running `alembic upgrade head` on every boot is a deliberate trade: it costs a second or
+two of wake time in exchange for never serving against a stale schema, and the free plan
+gives no separate release step to put it in. If wake time turns out to matter more,
+migrations can move out to a manual step — Neon is reachable directly, so
+`DATABASE_URL=<neon-url> uv run alembic upgrade head` works from any machine.
+
+**Neon** — create a project (pick the region nearest the Koyeb one) and copy the
+connection string. It arrives as `postgresql://…?sslmode=require`; `app/config.py`
+rewrites the scheme to psycopg3 and preserves the TLS parameters.
+
+**Koyeb** — one free web service per organisation, 512 MB / 0.1 vCPU, in Frankfurt or
+Washington D.C. Deploy from GitHub with the Dockerfile builder, work directory
+`backend`, health check HTTP `GET /healthz`.
 
 | Variable | Value |
 |---|---|
-| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — the bare `postgresql://` scheme is rewritten to psycopg3 in `app/config.py` |
+| `DATABASE_URL` | the Neon connection string, verbatim |
 | `ENV` | `prod` |
 | `SECRET_KEY` | `openssl rand -hex 32` — the app refuses to boot in prod on the dev default |
 | `FRONTEND_ORIGIN` | `https://frankly.app,https://www.frankly.app` (comma-separated) |
-| `COOKIE_SAMESITE` | `lax` on a shared domain; `none` while on `*.vercel.app` + `*.up.railway.app` |
+| `COOKIE_SAMESITE` | `lax` on a shared domain; `none` while on `*.vercel.app` + `*.koyeb.app` |
 | `LLM_ENABLED` | `false` |
 
 `ANTHROPIC_API_KEY` stays unset. Both it and `LLM_ENABLED` are required before anything
@@ -111,11 +130,12 @@ a refresh.
 
 **Why `COOKIE_SAMESITE` exists:** the refresh token is an httpOnly cookie. A browser
 only sends a `SameSite=Lax` cookie on same-site requests — `frankly.app` and
-`api.frankly.app` qualify, but `*.vercel.app` and `*.up.railway.app` are different
-sites, so on platform subdomains the cookie is silently dropped and every reload logs
-the user out. Set `none` until a custom domain is attached, then move it back to `lax`.
+`api.frankly.app` qualify, but `*.vercel.app` and `*.koyeb.app` are different sites, so
+on platform subdomains the cookie is silently dropped and every reload logs the user
+out. Set `none` until a custom domain is attached, then move it back to `lax`.
 
-**Demo account** — run once after the first deploy, from the Railway shell:
+**Demo account** — run once after the first deploy, from the Koyeb console (or against
+the Neon URL from your machine, since Neon is reachable directly):
 
 ```sh
 uv run --no-dev python -m app.seed_demo

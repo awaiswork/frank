@@ -21,11 +21,19 @@ PASSWORD = "supersecret"
 @pytest.mark.parametrize(
     ("given", "expected"),
     [
-        # What Railway/Neon/Heroku hand out — SQLAlchemy would pick psycopg2.
+        # What managed Postgres hands out — SQLAlchemy would pick psycopg2.
         ("postgresql://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
         ("postgres://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
         # Already explicit: left alone.
         ("postgresql+psycopg://u:p@host:5432/db", "postgresql+psycopg://u:p@host:5432/db"),
+        # Neon's real shape: the TLS query string must survive the rewrite, or
+        # the connection is refused.
+        (
+            "postgresql://u:p@ep-cool-name-123.eu-central-1.aws.neon.tech/frankly"
+            "?sslmode=require&channel_binding=require",
+            "postgresql+psycopg://u:p@ep-cool-name-123.eu-central-1.aws.neon.tech/frankly"
+            "?sslmode=require&channel_binding=require",
+        ),
     ],
 )
 def test_database_url_is_pinned_to_psycopg3(given: str, expected: str) -> None:

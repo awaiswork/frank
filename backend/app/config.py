@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     refresh_cookie_name: str = "frankly_refresh"
     # "lax" when the app and API share a registrable domain (frankly.app +
-    # api.frankly.app). Cross-site hosts (*.vercel.app → *.up.railway.app) need
+    # api.frankly.app). Cross-site hosts (*.vercel.app → *.koyeb.app) need
     # "none", or the browser drops the refresh cookie and every reload signs the
     # user out.
     cookie_samesite: Literal["lax", "none"] = "lax"
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     def _use_psycopg3(cls, value: str) -> str:
         """Pin managed-Postgres URLs to psycopg3.
 
-        Railway/Neon/Heroku hand out a bare ``postgresql://`` (or ``postgres://``)
+        Neon/Railway/Heroku hand out a bare ``postgresql://`` (or ``postgres://``)
         URL. SQLAlchemy maps those to psycopg2, which this project doesn't
         install — it uses ``psycopg[binary]`` v3 — so the app would die at import.
         """

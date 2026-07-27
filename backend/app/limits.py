@@ -5,7 +5,7 @@ the only unauthenticated endpoints that write, and an open signup route is the
 obvious thing to abuse. The billable AI routes need nothing here — they are
 already shut by the gates in ``app.features`` and 503 before doing any work.
 
-Behind Railway's proxy the client IP arrives in ``X-Forwarded-For``, which is
+Behind the platform's proxy the client IP arrives in ``X-Forwarded-For``, which is
 why the container runs uvicorn with ``--forwarded-allow-ips``; without it every
 request would look like it came from the proxy and share one bucket.
 """
