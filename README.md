@@ -11,6 +11,25 @@ Anthropic API (Claude).
 Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22+, Docker.
 
 ```sh
+./dev.sh
+```
+
+That brings up the whole stack: Postgres, the backend on http://localhost:8000, and the
+frontend on http://localhost:5173. It creates any missing `.env` from `.env.example`,
+applies migrations, and installs deps on first run. Ctrl-C stops the servers and leaves
+the db container up (`docker compose down` to stop that too).
+
+If either port is taken, override it — CORS and the frontend's API base follow along, so
+no `.env` edits are needed:
+
+```sh
+API_PORT=8001 WEB_PORT=5174 ./dev.sh
+```
+
+<details>
+<summary>Or start each piece by hand</summary>
+
+```sh
 # 1. Database
 docker compose up -d db
 
@@ -18,6 +37,7 @@ docker compose up -d db
 cd backend
 cp .env.example .env
 uv sync
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 
 # 3. Frontend (http://localhost:5173)
@@ -26,6 +46,8 @@ cp .env.example .env
 npm install
 npm run dev
 ```
+
+</details>
 
 Health check: `curl http://localhost:8000/healthz`
 
