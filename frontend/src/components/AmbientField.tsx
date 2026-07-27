@@ -1,17 +1,19 @@
 import { useEffect } from 'react';
-import { useInsights } from '../api/hooks';
-import { currentMonth } from '../lib/date';
-import { dayMoodFromInsights } from '../lib/mood';
+import { useDailyNote } from '../api/hooks';
 
 /**
  * The "living interface": a soft glow behind everything that reflects the user's
  * money weather — calm green on track, warm amber when stretched, a quiet ember
  * when over (never an alarm). Three cross-fading layers so a mood change melts in
- * rather than snapping. Reuses the cached insights query, so it costs no request.
+ * rather than snapping.
+ *
+ * Reads the same server mood as Frank's note, so the glow and the chip can never
+ * disagree. The daily query is invalidated on every money write, so this still
+ * shifts the moment you log something.
  */
 export function AmbientField() {
-  const insights = useInsights(currentMonth());
-  const mood = dayMoodFromInsights(insights.data);
+  const daily = useDailyNote();
+  const mood = daily.data?.mood ?? 'unknown';
 
   useEffect(() => {
     document.documentElement.setAttribute('data-mood', mood);

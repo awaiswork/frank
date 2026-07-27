@@ -81,19 +81,22 @@ async def ask(
 
 @router.get("/daily", response_model=DailyNoteOut)
 async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
-    """Frank's check-in for today — generated once per day, then served from cache.
+    """Frank's check-in for today — one note a day, rewritten if the day turns.
 
-    The mood is computed from the numbers alone, so with the AI features switched
-    off this still answers: it just serves the hand-written note for the day's mood
-    rather than paying for a model call.
+    The mood is recomputed live on every read, so the note can never contradict the
+    numbers on screen: a note written for 'go' this morning is stale once the user
+    has spent past their safe-to-spend, and gets replaced. Within a mood the text is
+    cached, which is what keeps this to at most a handful of model calls a day (and
+    exactly zero while the AI features are off, since the fallback is hand-written).
     """
     today = dt.date.today()
     row = db.scalar(
         select(DailyNote).where(DailyNote.user_id == user.id, DailyNote.note_date == today)
     )
-    if row is None:
-        context = advisor.build_context(db, user, today)
-        mood = daily.compute_mood(context, today)
+    context = advisor.build_context(db, user, today)
+    mood = daily.compute_mood(context, today)
+
+    if row is None or row.mood != mood:
         usage: dict[str, Any] = {}
         model: str | None = None
         if ai_enabled():
@@ -104,23 +107,23 @@ async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
                 headline, note = daily.fallback(mood)
         else:
             headline, note = daily.fallback(mood)
-        row = DailyNote(
-            user_id=user.id,
-            note_date=today,
-            mood=mood,
-            headline=headline,
-            note=note,
-            context_snapshot=context,
-            model=model,
-            input_tokens=usage.get("input_tokens"),
-            output_tokens=usage.get("output_tokens"),
-        )
-        db.add(row)
+
+        if row is None:
+            # First check-in today — this row is also the streak's "showed up" mark.
+            row = DailyNote(user_id=user.id, note_date=today)
+            db.add(row)
+        row.mood = mood
+        row.headline = headline
+        row.note = note
+        row.context_snapshot = context
+        row.model = model
+        row.input_tokens = usage.get("input_tokens")
+        row.output_tokens = usage.get("output_tokens")
         db.commit()
 
     return DailyNoteOut(
         date=row.note_date,
-        mood=row.mood,  # type: ignore[arg-type]
+        mood=row.mood,
         headline=row.headline,
         note=row.note,
         streak=daily.current_streak(db, user.id, today),

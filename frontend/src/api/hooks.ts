@@ -22,11 +22,15 @@ const qs = (params: Record<string, string | undefined>): string => {
 };
 
 // Money writes ripple into the budget + insights aggregates (the "64% -> 71%"
-// moment), so invalidate them together after any transaction change.
+// moment), so invalidate them together after any transaction change. 'daily' is in
+// here because the server re-reads the mood on every fetch and rewrites the note if
+// the day has turned — that's what keeps Frank's line and the ambient glow honest
+// the instant you log something.
 function invalidateMoney(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: ['transactions'] });
   void client.invalidateQueries({ queryKey: ['budgets'] });
   void client.invalidateQueries({ queryKey: ['insights'] });
+  void client.invalidateQueries({ queryKey: ['daily'] });
 }
 
 /** Everything off — what we assume until the server tells us otherwise. */
@@ -104,8 +108,9 @@ export function useUpdateMe() {
   });
 }
 
-// Frank's daily check-in. Generated once per day server-side, so it's safe to keep
-// fresh for the session — we don't want a new note on every home visit.
+// Frank's daily check-in, and the single source of the day's mood (the ambient
+// field reads it too). The server caches the text per mood, so refetching is cheap
+// and never buys a second model call while the day's read holds.
 export function useDailyNote() {
   return useQuery({
     queryKey: ['daily'],

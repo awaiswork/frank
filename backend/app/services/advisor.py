@@ -84,6 +84,9 @@ def build_context(db: Session, user: User, today: dt.date) -> dict[str, Any]:
         "monthly_income_eur": _eur(user.monthly_income_cents)
         if user.monthly_income_cents
         else None,
+        # When false, safe_to_spend_eur is just negative spend — not a budget. Both the
+        # mood logic and the model prompt key off this so neither invents a verdict.
+        "income_known": sts.income_known,
         "safe_to_spend_eur": _eur(sts.safe_to_spend_cents),
         "spent_this_month_eur": _eur(sts.spent_cents),
         "daily_burn_eur": _eur(burn.daily_burn_cents),

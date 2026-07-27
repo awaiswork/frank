@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
 import { AmbientField } from './AmbientField';
+import { QuickAdd } from './QuickAdd';
 
 type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
 
@@ -142,7 +143,35 @@ export function Layout() {
   const { logout, user } = useAuth();
   const [theme, toggleTheme] = useTheme();
   const { features, ready } = useFeatures();
+  const [adding, setAdding] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const advisorSoon = ready && !features.advisor;
+
+  // Logging is the thing people open Frank to do, so it gets a global shortcut:
+  // "a" for add (ignored while typing, so it never eats a keystroke) and ⌘/Ctrl-K.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing =
+        el != null &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'SELECT' ||
+          el.isContentEditable);
+      if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setAdding(true);
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'a' || e.key === 'A') {
+        e.preventDefault();
+        setAdding(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // First-run users (no income yet) land in onboarding until they finish or skip.
   const needsOnboarding =
@@ -155,55 +184,84 @@ export function Layout() {
   const elapsed = (today.getDate() / daysInMonth) * 100;
   const monthName = today.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 
+  const themeIcon =
+    theme === 'dark' ? (
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+      </svg>
+    ) : (
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+      </svg>
+    );
+
+  const wordmark = (
+    <div className="flex items-baseline gap-px">
+      <span className="font-display text-[25px] font-bold tracking-[-0.02em] text-ink">frank</span>
+      <span className="font-display text-[25px] font-bold text-go">.</span>
+    </div>
+  );
+
   return (
     <>
       <AmbientField />
       <div className="relative z-10 min-h-svh">
-        <div className="mx-auto grid max-w-[1180px] grid-cols-[236px_1fr] items-start">
-          {/* Sidebar */}
-          <aside className="sticky top-0 flex h-svh flex-col gap-7 border-r border-line px-5 py-[26px]">
+        {/* Mobile top bar — the sidebar's identity + theme, without its footprint */}
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-paper/85 px-4 py-3 backdrop-blur-md lg:hidden">
+          {wordmark}
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle light and dark"
+            className="grid h-10 w-10 place-items-center rounded-[10px] border border-line bg-surface text-ink-2"
+          >
+            {themeIcon}
+          </button>
+        </header>
+
+        <div className="mx-auto grid max-w-[1180px] grid-cols-1 items-start lg:grid-cols-[236px_1fr]">
+          {/* Sidebar (desktop only) */}
+          <aside className="sticky top-0 hidden h-svh flex-col gap-7 border-r border-line px-5 py-[26px] lg:flex">
             <div className="flex items-center justify-between">
-              <div className="flex items-baseline gap-px">
-                <span className="font-display text-[25px] font-bold tracking-[-0.02em] text-ink">
-                  frank
-                </span>
-                <span className="font-display text-[25px] font-bold text-go">.</span>
-              </div>
+              {wordmark}
               <button
                 onClick={toggleTheme}
                 aria-label="Toggle light and dark"
                 className="grid h-[38px] w-[38px] place-items-center rounded-[10px] border border-line bg-surface text-ink-2 hover:text-ink"
               >
-                {theme === 'dark' ? (
-                  <svg
-                    width="17"
-                    height="17"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="4" />
-                    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="17"
-                    height="17"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-                  </svg>
-                )}
+                {themeIcon}
               </button>
             </div>
+
+            {/* Logging is the primary action, so it sits above navigation. */}
+            <button
+              onClick={() => setAdding(true)}
+              className="flex h-11 items-center justify-center gap-2 rounded-input bg-ink text-[14.5px] font-semibold text-paper transition-opacity hover:opacity-90"
+            >
+              <PlusIcon />
+              Log an expense
+              <kbd className="ml-1 rounded border border-paper/25 px-1 py-px font-sans text-[10px] font-bold opacity-70">
+                A
+              </kbd>
+            </button>
 
             <nav className="flex flex-col gap-[3px]">
               {PRIMARY.map(([to, label, icon]) => (
@@ -246,12 +304,181 @@ export function Layout() {
             </div>
           </aside>
 
-          {/* Main */}
-          <main className="min-h-svh px-11 pt-10 pb-20">
+          {/* Main. Bottom padding clears the mobile tab bar. */}
+          <main className="min-h-svh px-4 pt-6 pb-32 sm:px-6 lg:px-11 lg:pt-10 lg:pb-20">
             <Outlet />
           </main>
         </div>
       </div>
+
+      {/* Mobile tab bar, with logging as the centre of gravity */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-line bg-paper/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
+        <TabItem to="/" label="Home" icon="home" />
+        <TabItem to="/transactions" label="Activity" icon="transactions" />
+        <li className="flex min-w-0 flex-1 items-center justify-center">
+          <button
+            onClick={() => setAdding(true)}
+            aria-label="Log an expense"
+            className="-mt-6 grid h-14 w-14 place-items-center rounded-full bg-ink text-paper"
+            style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}
+          >
+            <PlusIcon size={26} />
+          </button>
+        </li>
+        <TabItem to="/budgets" label="Budgets" icon="budgets" />
+        <li className="flex min-w-0 flex-1">
+          <button
+            onClick={() => setMoreOpen(true)}
+            className="flex w-full flex-col items-center gap-1 py-2.5 text-[10.5px] font-semibold text-muted"
+          >
+            <span className="grid h-[22px] w-[22px] place-items-center">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="19" cy="12" r="1.8" />
+              </svg>
+            </span>
+            More
+          </button>
+        </li>
+      </nav>
+
+      {moreOpen && (
+        <MoreSheet
+          advisorSoon={advisorSoon}
+          onClose={() => setMoreOpen(false)}
+          onSignOut={logout}
+          monthName={monthName}
+          daysLeft={daysLeft}
+        />
+      )}
+
+      <QuickAdd open={adding} onClose={() => setAdding(false)} />
     </>
+  );
+}
+
+function PlusIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+/** One tab in the mobile bar. Wrapped in <li> so the bar is a real list. */
+function TabItem({ to, label, icon }: { to: string; label: string; icon: IconName }) {
+  return (
+    <li className="flex min-w-0 flex-1">
+      <NavLink
+        to={to}
+        end={to === '/'}
+        className={({ isActive }) =>
+          `flex w-full flex-col items-center gap-1 py-2.5 text-[10.5px] font-semibold transition-colors ${
+            isActive ? 'text-ink' : 'text-muted'
+          }`
+        }
+      >
+        <span className="grid h-[22px] w-[22px] place-items-center">
+          <Icon name={icon} />
+        </span>
+        {label}
+      </NavLink>
+    </li>
+  );
+}
+
+/** The rest of the nav on small screens, so the tab bar stays down to five slots. */
+function MoreSheet({
+  advisorSoon,
+  onClose,
+  onSignOut,
+  monthName,
+  daysLeft,
+}: {
+  advisorSoon: boolean;
+  onClose: () => void;
+  onSignOut: () => void;
+  monthName: string;
+  daysLeft: number;
+}) {
+  const items: ReadonlyArray<readonly [string, string, IconName]> = [
+    ['/advisor', 'Ask Frank', 'advisor'],
+    ['/goals', 'Goals', 'goals'],
+    ['/insights', 'Insight', 'insight'],
+    ['/settings', 'Settings', 'settings'],
+  ];
+  return (
+    <div className="fixed inset-0 z-40 flex items-end lg:hidden" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="animate-fade-in absolute inset-0 cursor-default bg-black/45"
+      />
+      <div className="animate-sheet-in relative w-full rounded-t-[22px] border border-line-2 bg-surface px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
+              This month
+            </div>
+            <div className="num text-[15px] font-semibold text-ink">
+              {monthName} · {daysLeft} days left
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="grid h-9 w-9 place-items-center rounded-full text-muted"
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="flex flex-col">
+          {items.map(([to, label, icon]) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className="flex items-center gap-3 border-b border-line py-3.5 text-[15px] font-semibold text-ink last:border-0"
+            >
+              <span className="grid h-[18px] w-[18px] place-items-center text-muted">
+                <Icon name={icon} />
+              </span>
+              {label}
+              {to === '/advisor' && advisorSoon && (
+                <span className="ml-auto rounded-full bg-inset px-1.5 py-px text-[9.5px] font-bold tracking-[0.08em] text-faint uppercase">
+                  Soon
+                </span>
+              )}
+            </NavLink>
+          ))}
+        </div>
+        <button
+          onClick={onSignOut}
+          className="mt-3 h-11 w-full rounded-input border border-line-2 text-[14px] font-semibold text-ink-2"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
   );
 }

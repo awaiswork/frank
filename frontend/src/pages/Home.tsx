@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useBudgets, useCategories, useInsights, useTransactions } from '../api/hooks';
 import type { Category } from '../api/types';
 import { BudgetBar } from '../components/BudgetBar';
@@ -40,23 +41,31 @@ export function Home() {
     <div className="animate-fade-up flex flex-col gap-[18px]">
       <FrankDaily />
 
-      {/* Safe-to-spend hero */}
-      <Card className="px-8 py-[30px]">
+      {/* Safe-to-spend hero. With no income on file the figure is just negative
+          spend, so we show what we actually know and ask for the missing number
+          rather than printing a confident 0,00 €. */}
+      <Card className="px-6 py-7 sm:px-8 sm:py-[30px]">
         <div className="text-[13px] font-semibold tracking-[0.12em] text-muted uppercase">
-          Safe to spend
+          {safe && !safe.income_known ? 'Spent this month' : 'Safe to spend'}
         </div>
-        {parts ? (
+        {safe && !safe.income_known ? (
+          <NeedsIncome spentCents={safe.spent_cents} monthName={monthName} />
+        ) : parts ? (
           <>
             <div className="num mt-2 flex items-start gap-0.5 leading-[0.9]">
               <span
-                className="text-[84px] font-semibold tracking-[-0.03em]"
+                className="text-[56px] font-semibold tracking-[-0.03em] sm:text-[84px]"
                 style={{ color: parts.negative ? 'var(--over)' : 'var(--ink)' }}
               >
                 {parts.negative ? '−' : ''}
                 {parts.euros}
               </span>
-              <span className="mt-1.5 text-[38px] font-semibold text-ink-2">,{parts.cents}</span>
-              <span className="mt-[9px] ml-1.5 text-[32px] font-medium text-muted">€</span>
+              <span className="mt-1.5 text-[28px] font-semibold text-ink-2 sm:text-[38px]">
+                ,{parts.cents}
+              </span>
+              <span className="mt-[7px] ml-1.5 text-[24px] font-medium text-muted sm:mt-[9px] sm:text-[32px]">
+                €
+              </span>
             </div>
             <div className="mt-1.5 text-[14.5px] text-ink-2">
               for the rest of {monthName} · <span className="num">{daysLeft}</span> days to go.{' '}
@@ -157,6 +166,40 @@ export function Home() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * The honest hero for someone who hasn't told us what they earn. Shows the one
+ * number we can stand behind (what they've actually spent) and routes them to the
+ * setting that unlocks the rest.
+ */
+function NeedsIncome({ spentCents, monthName }: { spentCents: number; monthName: string }) {
+  const parts = moneyParts(useCountUp(spentCents));
+  return (
+    <>
+      <div className="num mt-2 flex items-start gap-0.5 leading-[0.9]">
+        <span className="text-[56px] font-semibold tracking-[-0.03em] text-ink sm:text-[84px]">
+          {parts.euros}
+        </span>
+        <span className="mt-1.5 text-[28px] font-semibold text-ink-2 sm:text-[38px]">
+          ,{parts.cents}
+        </span>
+        <span className="mt-[7px] ml-1.5 text-[24px] font-medium text-muted sm:mt-[9px] sm:text-[32px]">
+          €
+        </span>
+      </div>
+      <p className="mt-2 max-w-[46ch] text-[14.5px] leading-relaxed text-ink-2">
+        That's everything you've logged in {monthName}. Tell Frank your monthly income and he can
+        work out what's actually safe to spend.
+      </p>
+      <Link
+        to="/settings"
+        className="mt-4 inline-flex h-11 items-center justify-center rounded-input bg-ink px-5 text-[14.5px] font-semibold text-paper transition-opacity hover:opacity-90"
+      >
+        Add your income
+      </Link>
+    </>
   );
 }
 

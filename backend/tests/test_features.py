@@ -10,9 +10,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.features import AiDisabledError, ai_enabled
+from app.models import User
 from app.services import llm
 
 PASSWORD = "supersecret"
@@ -93,13 +96,18 @@ def test_gated_routes_still_answer_401_first(client: TestClient) -> None:
 
 
 def test_daily_note_falls_back_without_calling_model(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The home screen keeps working: the deterministic note, at zero cost."""
     from app.services import daily
 
     calls = _explode(monkeypatch)
     token = _register(client, "gate-daily@example.com")
+    user = db.scalar(select(User).where(User.email == "gate-daily@example.com"))
+    assert user is not None
+    user.monthly_income_cents = 320_000  # otherwise the mood is (correctly) 'unknown'
+    db.flush()
+
     resp = client.get("/advisor/daily", headers=_h(token))
     assert resp.status_code == 200
     body = resp.json()

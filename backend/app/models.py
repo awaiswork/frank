@@ -139,7 +139,10 @@ class DailyNote(UUIDPk, Timestamped, Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     note_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
-    mood: Mapped[str] = mapped_column(Text, nullable=False)  # 'go' | 'wait' | 'over'
+    # 'go' | 'wait' | 'over' | 'unknown' (no income on file — see services/daily.py).
+    # The note text is written *for* this mood, so if the day's live mood moves away
+    # from it the note is stale and gets rewritten.
+    mood: Mapped[str] = mapped_column(Text, nullable=False)
     headline: Mapped[str] = mapped_column(Text, nullable=False)
     note: Mapped[str] = mapped_column(Text, nullable=False)
     context_snapshot: Mapped[Any] = mapped_column(JSONB, nullable=False)
@@ -148,7 +151,7 @@ class DailyNote(UUIDPk, Timestamped, Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
-        CheckConstraint("mood IN ('go','wait','over')", name="ck_daily_notes_mood"),
+        CheckConstraint("mood IN ('go','wait','over','unknown')", name="ck_daily_notes_mood"),
         UniqueConstraint("user_id", "note_date", name="uq_daily_notes_user_date"),
         Index("ix_daily_notes_user_date", "user_id", text("note_date DESC")),
     )

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useCategories, useDeleteTransaction, useTransactions } from '../api/hooks';
 import type { Category, Transaction } from '../api/types';
 import { CategoryAvatar } from '../components/CategoryAvatar';
+import { QuickAdd } from '../components/QuickAdd';
 import { AiBadge } from '../components/bits';
 import { Money } from '../components/Money';
 import { Card } from '../components/ui';
@@ -23,6 +24,7 @@ function dayHeading(iso: string): string {
 
 export function Transactions() {
   const [month, setMonth] = useState(currentMonth());
+  const [adding, setAdding] = useState(false);
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const categories = useCategories();
@@ -73,7 +75,7 @@ export function Transactions() {
             ›
           </button>
         </div>
-        <div className="flex w-[230px] items-center gap-2.5 rounded-[11px] border border-line-2 bg-surface px-3 py-2">
+        <div className="flex w-full max-w-[230px] items-center gap-2.5 rounded-[11px] border border-line-2 bg-surface px-3 py-2">
           <svg
             width="16"
             height="16"
@@ -112,8 +114,16 @@ export function Transactions() {
         <Card className="px-6 py-12 text-center">
           <div className="text-[16px] font-semibold text-ink">Nothing here</div>
           <div className="mt-1 text-[14px] text-muted">
-            {q || categoryId ? 'No transactions match that.' : 'Capture your first one from Home.'}
+            {q || categoryId ? 'No transactions match that.' : 'Nothing logged this month yet.'}
           </div>
+          {!q && !categoryId && (
+            <button
+              onClick={() => setAdding(true)}
+              className="mt-5 inline-flex h-11 items-center justify-center rounded-input bg-ink px-5 text-[14.5px] font-semibold text-paper hover:opacity-90"
+            >
+              Log your first one
+            </button>
+          )}
         </Card>
       ) : (
         <div className="flex flex-col gap-[22px]">
@@ -146,6 +156,8 @@ export function Transactions() {
           })}
         </div>
       )}
+
+      <QuickAdd open={adding} onClose={() => setAdding(false)} />
     </section>
   );
 }

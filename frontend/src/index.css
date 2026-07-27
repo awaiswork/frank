@@ -248,6 +248,32 @@
   animation: stampIn 0.6s var(--ease-frank) both;
 }
 
+/* Quick-add sheet: slides up from the thumb on touch, settles in place on desktop. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-fade-in {
+  animation: fadeIn 0.18s var(--ease-frank) both;
+}
+.animate-sheet-in {
+  animation: sheetIn 0.28s var(--ease-frank) both;
+}
+
 /* --- Ambient field (living interface) -------------------------------------- */
 /* A soft glow behind everything, tinted to the user's "money weather". Three
    layers cross-fade on [data-mood] so a change melts in. Sits behind content

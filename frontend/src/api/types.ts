@@ -64,6 +64,9 @@ export interface Goal {
 }
 
 export interface SafeToSpend {
+  /** False when there's no stated income and none logged — safe_to_spend_cents
+   * is then just negative spend and must not be shown as a verdict. */
+  income_known: boolean;
   income_cents: number;
   spent_cents: number;
   remaining_budgets_cents: number;
@@ -143,7 +146,8 @@ export interface AdviceHistory {
 }
 
 // --- Daily note (the hook) ---
-export type DayMood = 'go' | 'wait' | 'over';
+/** 'unknown' = no income on file, so Frank owes a setup prompt, not a verdict. */
+export type DayMood = 'go' | 'wait' | 'over' | 'unknown';
 
 export interface DailyNote {
   date: string; // YYYY-MM-DD

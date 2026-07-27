@@ -180,6 +180,10 @@ class SafeToSpend:
     remaining_budgets_cents: int  # money still earmarked inside this month's budgets
     goal_contributions_cents: int  # set aside toward goals this month
     safe_to_spend_cents: int
+    # False when we had nothing to work from — no stated monthly income and no income
+    # logged this month. ``safe_to_spend_cents`` is then just negative spend, which
+    # means nothing, so callers must not present it as a verdict on the user.
+    income_known: bool
 
 
 def safe_to_spend(
@@ -255,6 +259,10 @@ def safe_to_spend(
     income_cents = (
         monthly_income_cents if monthly_income_cents is not None else int(row.income_logged)
     )
+    # Falling back to logged income is fine as a number, but if there is no income at
+    # all we are not entitled to any opinion about "what's safe" — say so explicitly
+    # rather than letting 0 masquerade as a real budget.
+    income_known = monthly_income_cents is not None or int(row.income_logged) > 0
     spent_cents = int(row.spent)
     remaining_budgets_cents = int(row.remaining_budgets)
     goal_contributions_cents = int(row.goal_contributions)
@@ -266,6 +274,7 @@ def safe_to_spend(
         safe_to_spend_cents=(
             income_cents - spent_cents - remaining_budgets_cents - goal_contributions_cents
         ),
+        income_known=income_known,
     )
 
 

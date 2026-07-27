@@ -1,31 +1,33 @@
-import type { DayMood, InsightsSummary } from '../api/types';
+import type { DayMood } from '../api/types';
 
 /**
- * Live "money weather" for the ambient field — recomputed as the user logs, so the
- * background shifts in real time. Mirrors the server's daily-note mood logic (minus
- * per-budget pace, which the insights summary doesn't carry): over once you're past
- * safe-to-spend, wait when the current burn would blow the days left, else go.
+ * Mood presentation only — the mood itself is decided server-side and arrives on
+ * `GET /advisor/daily`.
+ *
+ * It used to be computed twice (there, and again here from the insights summary),
+ * which meant the chip and the ambient glow could disagree on the same screen: the
+ * chip read a note cached that morning while the background reacted live. One
+ * source now, invalidated whenever money changes.
  */
-export function dayMoodFromInsights(summary: InsightsSummary | undefined): DayMood {
-  if (!summary) return 'go';
-  const sts = summary.safe_to_spend.safe_to_spend_cents;
-  if (sts < 0) return 'over';
-  const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysLeft = Math.max(daysInMonth - now.getDate(), 0);
-  const projected = summary.daily_burn.daily_burn_cents * daysLeft;
-  if (sts - projected < 0) return 'wait';
-  return 'go';
-}
 
+/** 'unknown' has no colour of its own — we're not making a claim, so stay neutral. */
 export function moodColor(mood: DayMood): string {
-  return `var(--${mood})`;
+  return mood === 'unknown' ? 'var(--muted)' : `var(--${mood})`;
 }
 
 export function moodSoft(mood: DayMood): string {
-  return `var(--${mood}-soft)`;
+  return mood === 'unknown' ? 'var(--surface-2)' : `var(--${mood}-soft)`;
 }
 
 export function moodLabel(mood: DayMood): string {
-  return mood === 'over' ? 'over' : mood === 'wait' ? 'ease off' : 'on track';
+  switch (mood) {
+    case 'over':
+      return 'over';
+    case 'wait':
+      return 'ease off';
+    case 'unknown':
+      return 'set up';
+    default:
+      return 'on track';
+  }
 }

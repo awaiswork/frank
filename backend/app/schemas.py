@@ -163,6 +163,9 @@ class SafeToSpendOut(BaseModel):
     remaining_budgets_cents: int
     goal_contributions_cents: int
     safe_to_spend_cents: int
+    # False -> we have no income to reason from; the client must not present
+    # safe_to_spend_cents as a verdict (see aggregates.SafeToSpend).
+    income_known: bool
 
 
 class BurnRateOut(BaseModel):
@@ -246,7 +249,7 @@ class AdvisorFollowedIn(BaseModel):
 
 # --- Daily note (the hook) ---------------------------------------------------
 
-Mood = Literal["go", "wait", "over"]
+Mood = Literal["go", "wait", "over", "unknown"]
 
 
 class DailyNoteOut(BaseModel):

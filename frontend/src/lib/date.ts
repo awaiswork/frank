@@ -4,8 +4,20 @@ export function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
+/** Today in the *user's* timezone. `toISOString()` alone is UTC, which dates a
+ *  late-evening expense to tomorrow (or an early-morning one to yesterday). */
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localISO(new Date());
+}
+
+/** Shift a `YYYY-MM-DD` date by ±n days, staying in local time. */
+export function shiftDays(iso: string, delta: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return localISO(new Date(y, m - 1, d + delta));
+}
+
+function localISO(date: Date): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
 const MONTH_NAMES = [

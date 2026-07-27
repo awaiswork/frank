@@ -25,7 +25,7 @@ from app.services import llm
 DAILY_MODEL = "claude-sonnet-4-6"
 DAILY_TOOL_NAME = "daily_note"
 
-Mood = Literal["go", "wait", "over"]
+Mood = Literal["go", "wait", "over", "unknown"]
 
 
 class DailyError(Exception):
@@ -40,9 +40,16 @@ class _Note(BaseModel):
 def compute_mood(context: dict[str, Any], today: dt.date) -> Mood:
     """The day's read, from the numbers alone — shared with the client's ambient field.
 
-    over = past safe-to-spend for the month; wait = on current burn the remaining days
-    would blow it, or a budget is running ahead of pace; go = comfortably on track.
+    unknown = we have no income to reason from, so we owe the user a setup prompt
+    rather than a verdict; over = past safe-to-spend for the month; wait = on current
+    burn the remaining days would blow it, or a budget is running ahead of pace;
+    go = comfortably on track.
     """
+    # Without income, safe-to-spend is just negative spend. Claiming someone is
+    # "within their means" off the back of that is a fabrication, so refuse to judge.
+    if not context.get("income_known", False):
+        return "unknown"
+
     sts = context.get("safe_to_spend_eur")
     if sts is None:
         return "go"
@@ -72,6 +79,10 @@ _DAILY_SYSTEM = (
     "- wait: trending tight for the days left. Be a gentle 'ease off this week'.\n"
     "- over: past their safe-to-spend. Be reassuring and forward-looking about recovery; no "
     "drama.\n"
+    "- unknown: their monthly income isn't set, so you do NOT know whether they can afford "
+    "anything. Never imply they are on track or overspending. Say what you can see (what "
+    "they've logged so far) and invite them to add their income so you can do the real "
+    "maths.\n"
     "Call the `daily_note` tool exactly once. Do NOT include a greeting, the date, or the word "
     "'good morning' — the app shows those. "
     "headline: 2-4 words, a glanceable read (e.g. 'Comfortably ahead', 'Ease off a touch', "
@@ -149,6 +160,13 @@ _FALLBACK: dict[Mood, tuple[str, str]] = {
         "Let's recover",
         "You're past your safe-to-spend for the month. No drama — a few small days from here "
         "brings it back.",
+    ),
+    # No income on file: state only what we actually know, and ask for the one number
+    # that unlocks the rest. Never a verdict.
+    "unknown": (
+        "Tell me what you earn",
+        "I'm logging what you spend, but I can't tell you what's safe until I know your "
+        "monthly income. Add it in Settings and I'll do the maths.",
     ),
 }
 
