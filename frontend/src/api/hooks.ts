@@ -7,6 +7,7 @@ import type {
   BudgetActual,
   Category,
   DailyNote,
+  Features,
   Goal,
   InsightsSummary,
   NlDraft,
@@ -26,6 +27,30 @@ function invalidateMoney(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: ['transactions'] });
   void client.invalidateQueries({ queryKey: ['budgets'] });
   void client.invalidateQueries({ queryKey: ['insights'] });
+}
+
+/** Everything off — what we assume until the server tells us otherwise. */
+const ALL_OFF: Features = {
+  ai_enabled: false,
+  nl_capture: false,
+  advisor: false,
+  ai_daily_note: false,
+};
+
+/**
+ * Server-owned feature flags. The model-backed features cost API usage, so this
+ * fails closed: if the flags can't be read we treat them as off (and the API
+ * would 503 those calls anyway). `ready` distinguishes "known off" from "not
+ * loaded yet", so we never flash "coming soon" at someone who has them on.
+ */
+export function useFeatures(): { features: Features; ready: boolean } {
+  const query = useQuery({
+    queryKey: ['features'],
+    queryFn: () => apiFetch<Features>('/features'),
+    staleTime: Infinity,
+    retry: 1,
+  });
+  return { features: query.data ?? ALL_OFF, ready: !query.isPending };
 }
 
 export function useCategories() {

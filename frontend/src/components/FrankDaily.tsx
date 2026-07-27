@@ -11,8 +11,12 @@ function greeting(): string {
 
 /**
  * Frank's daily check-in — the home hero and the app's reason to open daily. One
- * opinionated, AI-written line grounded in today's real numbers, with the day's
- * mood (which also drives the ambient field) and a quiet streak.
+ * opinionated line grounded in today's real numbers, with the day's mood (which
+ * also drives the ambient field) and a quiet streak.
+ *
+ * The mood is computed from the numbers alone, so this keeps working with the AI
+ * features off: the server just serves the hand-written note for the day's mood
+ * instead of paying for one. Nothing to gate here.
  */
 export function FrankDaily() {
   const daily = useDailyNote();

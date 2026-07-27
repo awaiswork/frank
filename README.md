@@ -6,6 +6,26 @@ capture and a spending advisor that reasons over your real data.
 **Stack:** React 19 + TypeScript (Vite) · Python 3.12 + FastAPI · PostgreSQL 16 ·
 Anthropic API (Claude).
 
+## AI features are off by default
+
+Three features call the Anthropic API and therefore cost money: natural-language
+capture, Ask Frank, and the written daily note. They ship **disabled** and show as
+"coming soon" in the UI. Everything else — logging spend by hand, budgets, goals,
+safe-to-spend, insights, CSV export — works untouched, and the daily note falls back
+to a hand-written line for the day's (still deterministic) mood.
+
+Turn them on with **both** of these in `backend/.env`:
+
+```sh
+LLM_ENABLED=true
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Either one alone leaves the features off, so a stray key can't start billing. The
+gate is enforced server-side — `GET /features` only tells the client what to render,
+while the routes themselves return 503 and `llm.get_client()` refuses to build a
+client at all. See `backend/app/features.py`.
+
 ## Local development
 
 Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22+, Docker.

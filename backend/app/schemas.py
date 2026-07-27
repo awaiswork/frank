@@ -255,3 +255,19 @@ class DailyNoteOut(BaseModel):
     headline: str
     note: str
     streak: int
+
+
+# --- Feature flags -----------------------------------------------------------
+
+
+class FeaturesOut(BaseModel):
+    """What this deployment has switched on, so the client knows what to render.
+
+    Presentation only — the server enforces the same flags on every billable
+    route (app/features.py), so a client that ignores this gets a 503.
+    """
+
+    ai_enabled: bool
+    nl_capture: bool
+    advisor: bool
+    ai_daily_note: bool

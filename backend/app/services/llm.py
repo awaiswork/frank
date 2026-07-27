@@ -16,9 +16,9 @@ from anthropic import AsyncAnthropic
 from anthropic.types import Message, MessageParam, ToolChoiceToolParam, ToolParam
 
 from app.config import get_settings
+from app.features import AiDisabledError, ai_enabled
 
 logger = logging.getLogger("frank.llm")
-settings = get_settings()
 
 # Hard caps (§7a) — keep cost bounded.
 PARSER_MAX_TOKENS = 1000
@@ -32,11 +32,21 @@ _client: AsyncAnthropic | None = None
 
 
 def get_client() -> AsyncAnthropic:
-    """Lazily build a shared async client (so tests that mock calls never need a key)."""
+    """Lazily build a shared async client (so tests that mock calls never need a key).
+
+    This is the last line of defence on cost: while the AI features are switched
+    off no client exists at all, so a route that forgot its guard fails loudly
+    instead of billing.
+    """
+    if not ai_enabled():
+        raise AiDisabledError(
+            "Frank's AI features are switched off (set LLM_ENABLED=true with an "
+            "ANTHROPIC_API_KEY to enable them)."
+        )
     global _client
     if _client is None:
         _client = AsyncAnthropic(
-            api_key=settings.anthropic_api_key,
+            api_key=get_settings().anthropic_api_key,
             timeout=_TIMEOUT_SECONDS,
             max_retries=_MAX_RETRIES,
         )

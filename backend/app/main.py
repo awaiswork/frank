@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.features import ai_enabled
 from app.routers import (
     advisor,
     auth,
@@ -14,6 +15,7 @@ from app.routers import (
     nl,
     transactions,
 )
+from app.schemas import FeaturesOut
 
 
 def _configure_logging() -> None:
@@ -46,6 +48,13 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/features", response_model=FeaturesOut)
+    def features() -> FeaturesOut:
+        """Which optional features are on. Unauthenticated: the client needs it
+        before it can render anything, and it reveals nothing user-specific."""
+        on = ai_enabled()
+        return FeaturesOut(ai_enabled=on, nl_capture=on, advisor=on, ai_daily_note=on)
 
     app.include_router(auth.router)
     app.include_router(categories.router)

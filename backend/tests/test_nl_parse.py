@@ -50,7 +50,7 @@ def _patch_calls(monkeypatch: pytest.MonkeyPatch, *messages: Any) -> dict[str, i
     return counter
 
 
-def test_parse_single(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_single(client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None) -> None:
     token = _register(client, "nl1@example.com")
     _patch_calls(
         monkeypatch,
@@ -80,7 +80,7 @@ def test_parse_single(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> No
     assert d["category_name"] == "Eating out"
 
 
-def test_parse_multi(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_multi(client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None) -> None:
     token = _register(client, "nl2@example.com")
     _patch_calls(
         monkeypatch,
@@ -101,7 +101,9 @@ def test_parse_multi(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> Non
     assert len(resp.json()) == 2
 
 
-def test_parse_defaults_date_to_today(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_defaults_date_to_today(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
+) -> None:
     token = _register(client, "nl3@example.com")
     _patch_calls(
         monkeypatch,
@@ -115,7 +117,7 @@ def test_parse_defaults_date_to_today(client: TestClient, monkeypatch: pytest.Mo
 
 
 def test_parse_unknown_category_left_unresolved(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
 ) -> None:
     token = _register(client, "nl4@example.com")
     _patch_calls(
@@ -139,7 +141,9 @@ def test_parse_unknown_category_left_unresolved(
     assert d["category_name"] == "Spaceship"  # echoed back, not resolved
 
 
-def test_malformed_then_retry(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_malformed_then_retry(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
+) -> None:
     token = _register(client, "nl5@example.com")
     # first response has an invalid amount (0, fails gt=0) -> corrective retry -> valid
     counter = _patch_calls(
@@ -157,7 +161,9 @@ def test_malformed_then_retry(client: TestClient, monkeypatch: pytest.MonkeyPatc
     assert counter["n"] == 2  # exactly one corrective retry
 
 
-def test_two_failures_return_422(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_two_failures_return_422(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
+) -> None:
     token = _register(client, "nl6@example.com")
     counter = _patch_calls(
         monkeypatch,
@@ -170,7 +176,7 @@ def test_two_failures_return_422(client: TestClient, monkeypatch: pytest.MonkeyP
 
 
 def test_length_limit_rejected_without_calling_model(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
 ) -> None:
     token = _register(client, "nl7@example.com")
     counter = _patch_calls(monkeypatch)  # no messages queued; must not be called

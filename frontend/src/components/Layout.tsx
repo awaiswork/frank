@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
+import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
 import { AmbientField } from './AmbientField';
 
@@ -100,7 +101,17 @@ const RECORDS: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/settings', 'Settings', 'settings'],
 ];
 
-function NavItem({ to, label, icon }: { to: string; label: string; icon: IconName }) {
+function NavItem({
+  to,
+  label,
+  icon,
+  soon = false,
+}: {
+  to: string;
+  label: string;
+  icon: IconName;
+  soon?: boolean;
+}) {
   return (
     <NavLink
       to={to}
@@ -115,6 +126,14 @@ function NavItem({ to, label, icon }: { to: string; label: string; icon: IconNam
         <Icon name={icon} />
       </span>
       {label}
+      {soon && (
+        <span
+          title="Coming soon"
+          className="ml-auto rounded-full bg-inset px-1.5 py-px text-[9.5px] font-bold tracking-[0.08em] text-faint uppercase"
+        >
+          Soon
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -122,6 +141,8 @@ function NavItem({ to, label, icon }: { to: string; label: string; icon: IconNam
 export function Layout() {
   const { logout, user } = useAuth();
   const [theme, toggleTheme] = useTheme();
+  const { features, ready } = useFeatures();
+  const advisorSoon = ready && !features.advisor;
 
   // First-run users (no income yet) land in onboarding until they finish or skip.
   const needsOnboarding =
@@ -186,7 +207,13 @@ export function Layout() {
 
             <nav className="flex flex-col gap-[3px]">
               {PRIMARY.map(([to, label, icon]) => (
-                <NavItem key={to} to={to} label={label} icon={icon} />
+                <NavItem
+                  key={to}
+                  to={to}
+                  label={label}
+                  icon={icon}
+                  soon={to === '/advisor' && advisorSoon}
+                />
               ))}
               <div className="mx-1 my-2.5 h-px bg-line" />
               {RECORDS.map(([to, label, icon]) => (

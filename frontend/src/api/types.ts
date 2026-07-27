@@ -152,3 +152,13 @@ export interface DailyNote {
   note: string;
   streak: number;
 }
+
+// --- Feature flags ---
+/** GET /features — which optional features this deployment has switched on.
+ * The model-backed ones cost API usage, so they can be turned off server-side. */
+export interface Features {
+  ai_enabled: boolean;
+  nl_capture: boolean;
+  advisor: boolean;
+  ai_daily_note: boolean;
+}

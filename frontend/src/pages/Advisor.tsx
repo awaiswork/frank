@@ -1,9 +1,10 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { askAdvisor, previewFromPartial } from '../api/advisor';
-import { useAdviceHistory, useSetFollowed } from '../api/hooks';
+import { useAdviceHistory, useFeatures, useSetFollowed } from '../api/hooks';
 import type { AdviceHistory, AdviceVerdict } from '../api/types';
 import { VerdictStamp } from '../components/VerdictStamp';
+import { ComingSoonBadge } from '../components/bits';
 import { Button, Card, EmptyState, SectionLabel } from '../components/ui';
 import { verdictLabel, verdictSoft } from '../lib/verdict';
 
@@ -16,6 +17,8 @@ const SUGGESTIONS: ReadonlyArray<readonly [string, string]> = [
 
 export function Advisor() {
   const queryClient = useQueryClient();
+  const { features, ready } = useFeatures();
+  const off = ready && !features.advisor;
   const [question, setQuestion] = useState('');
   const [partial, setPartial] = useState('');
   const [verdict, setVerdict] = useState<AdviceVerdict | null>(null);
@@ -24,7 +27,8 @@ export function Advisor() {
   const abortRef = useRef<AbortController | null>(null);
 
   function runAsk(q: string) {
-    if (!q.trim() || streaming) return;
+    // Fail closed — the API 503s this while the feature is off, but never ask.
+    if (!q.trim() || streaming || !features.advisor) return;
     setQuestion(q);
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -64,7 +68,10 @@ export function Advisor() {
   return (
     <section className="animate-fade-up mx-auto flex max-w-[640px] flex-col gap-[18px]">
       <div>
-        <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em]">Ask Frank</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em]">Ask Frank</h1>
+          {off && <ComingSoonBadge />}
+        </div>
         <p className="mt-1 text-[14.5px] text-muted">
           Thinking about a purchase? Frank checks your real budgets and goals, then gives you a
           straight answer.
@@ -73,23 +80,35 @@ export function Advisor() {
 
       <form
         onSubmit={onSubmit}
-        className="flex items-center gap-2.5 rounded-card border border-line-2 bg-surface py-2 pr-2 pl-[18px]"
+        className={`flex items-center gap-2.5 rounded-card border bg-surface py-2 pr-2 pl-[18px] ${
+          off ? 'border-dashed border-line-2 opacity-70' : 'border-line-2'
+        }`}
         style={{ boxShadow: 'var(--shadow)' }}
       >
         <input
-          value={question}
+          value={off ? '' : question}
           onChange={(e) => setQuestion(e.target.value)}
           maxLength={300}
+          disabled={off}
+          readOnly={off}
           placeholder="Should I buy…"
-          aria-label="Your question"
-          className="min-w-0 flex-1 bg-transparent py-2 text-[16px] text-ink placeholder:text-faint focus:outline-none"
+          aria-label={off ? 'Your question (coming soon)' : 'Your question'}
+          className={`min-w-0 flex-1 bg-transparent py-2 text-[16px] placeholder:text-faint focus:outline-none ${
+            off ? 'cursor-not-allowed text-faint' : 'text-ink'
+          }`}
         />
-        <Button type="submit" disabled={streaming || !question.trim()}>
-          {streaming ? 'Thinking…' : 'Ask'}
-        </Button>
+        {off ? (
+          <ComingSoonBadge />
+        ) : (
+          <Button type="submit" disabled={streaming || !question.trim()}>
+            {streaming ? 'Thinking…' : 'Ask'}
+          </Button>
+        )}
       </form>
 
-      {!streaming && !verdict && (
+      {off && <ComingSoonNotice />}
+
+      {!off && !streaming && !verdict && (
         <div className="flex flex-wrap gap-2.5">
           {SUGGESTIONS.map(([label, q]) => (
             <button
@@ -109,6 +128,31 @@ export function Advisor() {
 
       <History />
     </section>
+  );
+}
+
+/** Shown in place of the verdict card while the Advisor is switched off. */
+function ComingSoonNotice() {
+  // Past verdicts are already stored, so reading them costs nothing — say so,
+  // but only when there's actually something down there.
+  const history = useAdviceHistory();
+  const hasHistory = (history.data?.length ?? 0) > 0;
+  return (
+    <Card className="flex flex-col gap-3">
+      <p className="font-display text-[19px] font-semibold tracking-[-0.01em] text-ink">
+        Frank's verdicts are on the way.
+      </p>
+      <p className="text-[14.5px] leading-relaxed text-ink-2">
+        Asking Frank means running your numbers through a model, so it's switched off for now.
+        Everything that doesn't cost anything still works — your safe-to-spend, budgets, goals and
+        insights are all live on the other tabs.
+      </p>
+      {hasHistory && (
+        <p className="text-[13px] text-faint">
+          Anything you asked before is still here, just below.
+        </p>
+      )}
+    </Card>
   );
 }
 

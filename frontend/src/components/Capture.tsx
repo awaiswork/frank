@@ -1,12 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../api/client';
-import { useCategories, useCreateTransaction, useParseNl } from '../api/hooks';
+import { useCategories, useCreateTransaction, useFeatures, useParseNl } from '../api/hooks';
 import type { Category, Kind, NlDraft } from '../api/types';
 import { categoryColor } from '../lib/categoryColor';
 import { parseAmountToCents } from '../lib/money';
+import { ComingSoonBadge, FrankCallout } from './bits';
 import { Button } from './ui';
 
 type DraftItem = NlDraft & { _id: string };
+
+const FIELD =
+  'h-10 rounded-[10px] border border-line-2 bg-field px-3 text-[14.5px] text-ink focus:outline-none';
+
+function todayIso(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
 
 const TICKS = [
   'Reading the amount',
@@ -18,8 +27,17 @@ const TICKS = [
 /**
  * Natural-language capture (technical-plan.md §7b, design "Capture"). Type it
  * like you'd say it; Frank parses into drafts you confirm before anything saves.
+ *
+ * Parsing is the only part that costs API usage, so when it's switched off this
+ * falls back to the manual form below — logging spend must never stop working.
  */
 export function Capture({ placeholder }: { placeholder?: string }) {
+  const { features, ready } = useFeatures();
+  if (ready && !features.nl_capture) return <ManualCapture />;
+  return <NlCapture placeholder={placeholder} />;
+}
+
+function NlCapture({ placeholder }: { placeholder?: string }) {
   const parse = useParseNl();
   const categories = useCategories();
   const [text, setText] = useState('');
@@ -157,6 +175,169 @@ export function Capture({ placeholder }: { placeholder?: string }) {
   );
 }
 
+/**
+ * What you get while Frank's reading is switched off: the same card, filled in
+ * by hand. Writes go straight to POST /transactions, which costs nothing.
+ */
+function ManualCapture() {
+  const categories = useCategories();
+  const create = useCreateTransaction();
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [kind, setKind] = useState<Kind>('expense');
+  const [categoryId, setCategoryId] = useState('');
+  const [occurredOn, setOccurredOn] = useState(todayIso);
+  const [err, setErr] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const selected = (categories.data ?? []).find((c) => c.id === categoryId) ?? null;
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    const cents = parseAmountToCents(amount);
+    if (cents === null || !description.trim()) {
+      setErr(true);
+      return;
+    }
+    setErr(false);
+    create.mutate(
+      {
+        amount_cents: cents,
+        description: description.trim(),
+        kind,
+        occurred_on: occurredOn,
+        category_id: categoryId || null,
+      },
+      {
+        onSuccess: () => {
+          setAmount('');
+          setDescription('');
+          setSaved(true);
+          window.setTimeout(() => setSaved(false), 1800);
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* The natural-language bar, shown as the thing it will be. */}
+      <div
+        className="flex items-center gap-2.5 rounded-card border border-dashed border-line-2 bg-surface py-2 pr-2 pl-[18px] opacity-70"
+        style={{ boxShadow: 'var(--shadow)' }}
+      >
+        <span className="grid place-items-center text-faint">
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </span>
+        <input
+          disabled
+          className="min-w-0 flex-1 cursor-not-allowed bg-transparent py-2 text-[16px] text-faint"
+          value=""
+          readOnly
+          placeholder="Tell Frank what you spent — “8,40 coffee and croissant”"
+          aria-label="Natural-language capture (coming soon)"
+        />
+        <ComingSoonBadge />
+      </div>
+
+      <FrankCallout>
+        I can't read your sentences just yet — that's coming. Log it by hand below and everything
+        else works exactly the same.
+      </FrankCallout>
+
+      <form
+        onSubmit={onSubmit}
+        className="overflow-hidden rounded-card border border-line-2 bg-surface"
+        style={{ boxShadow: 'var(--shadow)' }}
+      >
+        <div className="border-b border-line p-[18px]">
+          <div className="mb-1 text-[12px] font-semibold text-muted">Amount</div>
+          <div className="flex items-baseline gap-1">
+            <input
+              inputMode="decimal"
+              aria-label="Amount"
+              placeholder="0,00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className={`num w-32 bg-transparent text-[34px] font-semibold tracking-[-0.02em] placeholder:text-faint focus:outline-none ${
+                err ? 'text-over' : 'text-ink'
+              }`}
+            />
+            <span className="num text-[18px] text-muted">€</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 border-b border-line p-[18px]">
+          <label className="flex items-center gap-2">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ background: selected ? categoryColor(selected.name) : 'var(--muted)' }}
+            />
+            <select
+              className={`${FIELD} flex-1`}
+              aria-label="Category"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+            >
+              <option value="">No category</option>
+              {(categories.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <select
+            className={FIELD}
+            aria-label="Type"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as Kind)}
+          >
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-2.5 p-[18px] sm:flex-row sm:items-center">
+          <input
+            className={`${FIELD} flex-1`}
+            aria-label="Description"
+            placeholder="What was it?"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={500}
+          />
+          <input
+            type="date"
+            className={`${FIELD} sm:w-40`}
+            aria-label="Date"
+            value={occurredOn}
+            onChange={(e) => setOccurredOn(e.target.value)}
+          />
+          <Button type="submit" disabled={create.isPending} className="h-10">
+            {create.isPending ? 'Saving…' : 'Log it'}
+          </Button>
+        </div>
+      </form>
+
+      {saved && (
+        <p className="animate-pop text-[13px] font-semibold text-go">Logged. Frank's got it.</p>
+      )}
+      {create.isError && <p className="text-[13px] text-over">Couldn't save — try again.</p>}
+    </div>
+  );
+}
+
 function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
@@ -187,8 +368,6 @@ function DraftCard({
 
   const conf = confidence(draft.confidence);
   const selected = categories.find((c) => c.id === categoryId) ?? null;
-  const field =
-    'h-10 rounded-[10px] border border-line-2 bg-field px-3 text-[14.5px] text-ink focus:outline-none';
 
   function log() {
     const cents = parseAmountToCents(amount);
@@ -293,7 +472,7 @@ function DraftCard({
             style={{ background: selected ? categoryColor(selected.name) : 'var(--muted)' }}
           />
           <select
-            className={`${field} flex-1`}
+            className={`${FIELD} flex-1`}
             aria-label="Category"
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
@@ -307,7 +486,7 @@ function DraftCard({
           </select>
         </label>
         <select
-          className={field}
+          className={FIELD}
           aria-label="Type"
           value={kind}
           onChange={(e) => setKind(e.target.value as Kind)}
@@ -323,14 +502,14 @@ function DraftCard({
         style={{ animationDelay: '0.21s' }}
       >
         <input
-          className={`${field} flex-1`}
+          className={`${FIELD} flex-1`}
           aria-label="Description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
         <input
           type="date"
-          className={`${field} sm:w-40`}
+          className={`${FIELD} sm:w-40`}
           aria-label="Date"
           value={occurredOn}
           onChange={(e) => setOccurredOn(e.target.value)}

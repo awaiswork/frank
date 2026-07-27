@@ -70,6 +70,32 @@ def db(engine: Engine) -> Iterator[Session]:
         connection.close()
 
 
+@pytest.fixture(autouse=True)
+def _ai_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Default every test to the shipped state: the billable AI features are off.
+
+    Set explicitly (rather than relying on the default) so a developer's local
+    ``.env`` can't quietly change what the suite is testing.
+    """
+    monkeypatch.setenv("LLM_ENABLED", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def ai_on(_ai_off: None, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Switch the AI features on, for tests that mock the model itself.
+
+    Depends on ``_ai_off`` purely for ordering — it must run after the default.
+    """
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-never-used")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture
 def client(db: Session) -> Iterator[TestClient]:
     app = create_app()

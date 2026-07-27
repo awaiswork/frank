@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
+from app.features import NlCaptureGate
 from app.models import Category
 from app.schemas import NlParseIn, ParsedTransactionOut
 from app.services.parser import ParseError, parse_transactions
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/nl", tags=["nl"])
 
 
 @router.post("/parse", response_model=list[ParsedTransactionOut])
-async def parse(body: NlParseIn, user: CurrentUser, db: DbSession) -> list[ParsedTransactionOut]:
+async def parse(
+    body: NlParseIn, user: CurrentUser, db: DbSession, _gate: NlCaptureGate
+) -> list[ParsedTransactionOut]:
     categories = list(db.scalars(select(Category).where(Category.user_id == user.id)))
     today = dt.date.today()
 

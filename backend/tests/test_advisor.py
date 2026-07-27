@@ -91,7 +91,7 @@ def _fake_stream(verdict: advisor.Verdict) -> Any:
 
 
 def test_ask_streams_persists_and_history(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
 ) -> None:
     token = _register(client, "ask@example.com")
     verdict = advisor.Verdict(
@@ -126,7 +126,9 @@ def test_ask_streams_persists_and_history(
     assert patched.json()["user_followed"] is True
 
 
-def test_ask_handles_model_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ask_handles_model_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
+) -> None:
     token = _register(client, "fail@example.com")
 
     async def boom(
@@ -143,7 +145,9 @@ def test_ask_handles_model_failure(client: TestClient, monkeypatch: pytest.Monke
     assert client.get("/advisor/history", headers=_h(token)).json() == []
 
 
-def test_advice_isolation_and_limits(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_advice_isolation_and_limits(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
+) -> None:
     verdict = advisor.Verdict(
         verdict="skip", headline="Maybe later", evidence=[], reasoning="Tight."
     )

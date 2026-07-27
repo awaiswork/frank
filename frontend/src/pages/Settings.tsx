@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCategories, useTransactions, useUpdateMe } from '../api/hooks';
+import { useCategories, useFeatures, useTransactions, useUpdateMe } from '../api/hooks';
 import type { Category, Transaction, User } from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { CategoryAvatar } from '../components/CategoryAvatar';
+import { ComingSoonBadge } from '../components/bits';
 import { Button, Card, SectionLabel, TextInput } from '../components/ui';
 import { currentMonth, monthLabel } from '../lib/date';
 import { formatMoney, parseAmountToCents } from '../lib/money';
@@ -32,6 +33,10 @@ export function Settings() {
           <div className="h-px bg-line" />
           <IncomeRow incomeCents={user?.monthly_income_cents ?? null} onSaved={setUser} />
         </Card>
+      </Block>
+
+      <Block label="Frank's AI">
+        <AiFeaturesCard />
       </Block>
 
       <Block label="Categories">
@@ -99,6 +104,50 @@ function Row({
       </div>
       {children}
     </div>
+  );
+}
+
+/**
+ * Says plainly which model-backed features are live. They're the only ones that
+ * cost API usage, so they're switched off server-side until they're paid for —
+ * this makes the "coming soon" labels elsewhere make sense.
+ */
+function AiFeaturesCard() {
+  const { features, ready } = useFeatures();
+  const rows: ReadonlyArray<readonly [string, string, boolean]> = [
+    [
+      'Natural-language capture',
+      'Type “8,40 coffee” and have Frank fill in the rest.',
+      features.nl_capture,
+    ],
+    ['Ask Frank', 'A grounded verdict on a purchase you’re weighing.', features.advisor],
+    ['Written daily note', 'Today’s check-in, written fresh each morning.', features.ai_daily_note],
+  ];
+
+  return (
+    <Card className="flex flex-col gap-5">
+      {rows.map(([label, hint, on], i) => (
+        <div key={label} className="flex flex-col gap-5">
+          {i > 0 && <div className="h-px bg-line" />}
+          <Row label={label} hint={hint}>
+            {!ready ? (
+              <span className="text-[13px] text-faint">…</span>
+            ) : on ? (
+              <span className="text-[13px] font-semibold text-go">On</span>
+            ) : (
+              <ComingSoonBadge />
+            )}
+          </Row>
+        </div>
+      ))}
+      {ready && !features.ai_enabled && (
+        <p className="text-[13px] leading-relaxed text-muted">
+          These three are the only parts of Frank that call a model, so they're off for now. Your
+          numbers, budgets, goals and insights are unaffected — and you can still log everything by
+          hand.
+        </p>
+      )}
+    </Card>
   );
 }
 

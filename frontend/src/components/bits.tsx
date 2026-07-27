@@ -12,6 +12,17 @@ export function AiBadge() {
   );
 }
 
+/** Marks a feature that's built but switched off in this build. */
+export function ComingSoonBadge({ className = '' }: { className?: string }) {
+  return (
+    <span
+      className={`shrink-0 rounded-full border border-line-2 bg-inset px-2.5 py-1 text-[11px] font-bold tracking-[0.08em] text-muted uppercase ${className}`}
+    >
+      Coming soon
+    </span>
+  );
+}
+
 type Tone = 'go' | 'over' | 'wait' | 'neutral';
 
 /** A lowercase "frank" callout box — the product's voice. */

@@ -6,12 +6,14 @@ import datetime as dt
 import json
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
+from app.features import AdvisorGate, ai_enabled
 from app.models import AdviceRequest, DailyNote
 from app.schemas import AdviceHistoryOut, AdvisorAskIn, AdvisorFollowedIn, DailyNoteOut
 from app.services import advisor, daily
@@ -24,7 +26,9 @@ def _sse(event: str, data: dict[str, object]) -> str:
 
 
 @router.post("/ask")
-async def ask(body: AdvisorAskIn, user: CurrentUser, db: DbSession) -> StreamingResponse:
+async def ask(
+    body: AdvisorAskIn, user: CurrentUser, db: DbSession, _gate: AdvisorGate
+) -> StreamingResponse:
     context = advisor.build_context(db, user, dt.date.today())
 
     async def gen() -> AsyncIterator[str]:
@@ -77,7 +81,12 @@ async def ask(body: AdvisorAskIn, user: CurrentUser, db: DbSession) -> Streaming
 
 @router.get("/daily", response_model=DailyNoteOut)
 async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
-    """Frank's check-in for today — generated once per day, then served from cache."""
+    """Frank's check-in for today — generated once per day, then served from cache.
+
+    The mood is computed from the numbers alone, so with the AI features switched
+    off this still answers: it just serves the hand-written note for the day's mood
+    rather than paying for a model call.
+    """
     today = dt.date.today()
     row = db.scalar(
         select(DailyNote).where(DailyNote.user_id == user.id, DailyNote.note_date == today)
@@ -85,13 +94,16 @@ async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
     if row is None:
         context = advisor.build_context(db, user, today)
         mood = daily.compute_mood(context, today)
-        try:
-            headline, note, usage = await daily.generate(context, mood)
-            model: str | None = daily.DAILY_MODEL
-        except daily.DailyError:
+        usage: dict[str, Any] = {}
+        model: str | None = None
+        if ai_enabled():
+            try:
+                headline, note, usage = await daily.generate(context, mood)
+                model = daily.DAILY_MODEL
+            except daily.DailyError:
+                headline, note = daily.fallback(mood)
+        else:
             headline, note = daily.fallback(mood)
-            usage = {}
-            model = None
         row = DailyNote(
             user_id=user.id,
             note_date=today,

@@ -54,7 +54,7 @@ def test_compute_mood() -> None:
 
 
 def test_daily_generates_once_then_caches_with_streak(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
 ) -> None:
     token = _register(client, "daily@example.com")
     calls = {"n": 0}
@@ -82,7 +82,7 @@ def test_daily_generates_once_then_caches_with_streak(
 
 
 def test_daily_falls_back_on_model_failure(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ai_on: None
 ) -> None:
     token = _register(client, "dailyfail@example.com")
 
