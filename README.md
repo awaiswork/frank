@@ -82,3 +82,45 @@ cd frontend && npm run lint && npm run format:check && npm run build
 ```
 
 CI runs the same checks on every push (`.github/workflows/ci.yml`).
+
+## Deployment
+
+The API runs on Railway from `backend/Dockerfile` (managed Postgres attached); the
+frontend is a static Vite build on Vercel. Both deploy from `main` on push. Migrations
+run as part of the container's start command, so a deploy can never serve against a
+stale schema.
+
+**Railway** — service root directory `backend`, Dockerfile builder.
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` — the bare `postgresql://` scheme is rewritten to psycopg3 in `app/config.py` |
+| `ENV` | `prod` |
+| `SECRET_KEY` | `openssl rand -hex 32` — the app refuses to boot in prod on the dev default |
+| `FRONTEND_ORIGIN` | `https://frankly.app,https://www.frankly.app` (comma-separated) |
+| `COOKIE_SAMESITE` | `lax` on a shared domain; `none` while on `*.vercel.app` + `*.up.railway.app` |
+| `LLM_ENABLED` | `false` |
+
+`ANTHROPIC_API_KEY` stays unset. Both it and `LLM_ENABLED` are required before anything
+can bill, so an unset key is a second lock (`app/features.py`).
+
+**Vercel** — root directory `frontend`, framework Vite, `VITE_API_URL` pointing at the
+API. Vite inlines that at build time, so changing it needs a redeploy, not a restart.
+`frontend/vercel.json` rewrites all paths to `index.html` so client-side routes survive
+a refresh.
+
+**Why `COOKIE_SAMESITE` exists:** the refresh token is an httpOnly cookie. A browser
+only sends a `SameSite=Lax` cookie on same-site requests — `frankly.app` and
+`api.frankly.app` qualify, but `*.vercel.app` and `*.up.railway.app` are different
+sites, so on platform subdomains the cookie is silently dropped and every reload logs
+the user out. Set `none` until a custom domain is attached, then move it back to `lax`.
+
+**Demo account** — run once after the first deploy, from the Railway shell:
+
+```sh
+uv run --no-dev python -m app.seed_demo
+```
+
+That creates `demo@frankly.app` with a deterministic two-month history (transactions,
+budgets, a savings goal) so the public link opens on a populated app rather than empty
+states. It's idempotent — re-running is a no-op.

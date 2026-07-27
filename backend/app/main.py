@@ -2,9 +2,11 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
 from app.features import ai_enabled
+from app.limits import limiter, rate_limit_handler
 from app.routers import (
     advisor,
     auth,
@@ -37,9 +39,17 @@ def create_app() -> FastAPI:
     _configure_logging()
     settings = get_settings()
     app = FastAPI(title="Frankly API", version="0.1.0")
+
+    # Toggled per-environment rather than at import, so the test suite (which
+    # registers many accounts a minute) can switch it off.
+    limiter.enabled = settings.rate_limit_enabled
+    limiter.reset()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_origin],
+        allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

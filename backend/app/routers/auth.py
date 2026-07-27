@@ -6,7 +6,7 @@ import uuid
 from typing import Annotated
 
 import jwt
-from fastapi import APIRouter, Cookie, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -20,28 +20,33 @@ from app.core.security import (
     verify_password,
 )
 from app.deps import CurrentUser, DbSession
+from app.limits import AUTH_LIMIT, limiter
 from app.models import User
 from app.schemas import LoginIn, RegisterIn, TokenOut, UserOut, UserUpdate
 from app.seed import seed_default_categories
 
 router = APIRouter(tags=["auth"])
-settings = get_settings()
 
 
 def _set_refresh_cookie(response: Response, user_id: uuid.UUID) -> None:
+    # Read at call time, not import time — same reason as `features.ai_enabled`:
+    # a module-level binding freezes the cookie policy at first import, so
+    # COOKIE_SAMESITE would silently never apply.
+    settings = get_settings()
     response.set_cookie(
         key=settings.refresh_cookie_name,
         value=create_refresh_token(user_id),
         httponly=True,
         secure=settings.is_prod,
-        samesite="lax",
+        samesite=settings.cookie_samesite,
         max_age=settings.refresh_token_expire_days * 24 * 3600,
         path="/auth",
     )
 
 
 @router.post("/auth/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
-def register(body: RegisterIn, response: Response, db: DbSession) -> TokenOut:
+@limiter.limit(AUTH_LIMIT)
+def register(request: Request, body: RegisterIn, response: Response, db: DbSession) -> TokenOut:
     user = User(email=body.email, password_hash=hash_password(body.password))
     db.add(user)
     try:
@@ -56,7 +61,8 @@ def register(body: RegisterIn, response: Response, db: DbSession) -> TokenOut:
 
 
 @router.post("/auth/login", response_model=TokenOut)
-def login(body: LoginIn, response: Response, db: DbSession) -> TokenOut:
+@limiter.limit(AUTH_LIMIT)
+def login(request: Request, body: LoginIn, response: Response, db: DbSession) -> TokenOut:
     user = db.scalar(select(User).where(User.email == body.email))
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")

@@ -78,6 +78,9 @@ def _ai_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     ``.env`` can't quietly change what the suite is testing.
     """
     monkeypatch.setenv("LLM_ENABLED", "false")
+    # The suite registers more accounts per minute than the per-IP limit allows,
+    # and every test shares one client host. Throttling is exercised separately.
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
