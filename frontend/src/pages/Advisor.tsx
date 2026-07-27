@@ -55,7 +55,7 @@ export function Advisor() {
       },
       controller.signal,
     ).catch(() => {
-      setError('Something went wrong reaching Frank.');
+      setError('Something went wrong reaching Frankly.');
       setStreaming(false);
     });
   }
@@ -69,11 +69,11 @@ export function Advisor() {
     <section className="animate-fade-up mx-auto flex max-w-[640px] flex-col gap-[18px]">
       <div>
         <div className="flex items-center gap-3">
-          <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em]">Ask Frank</h1>
+          <h1 className="font-display text-[24px] font-semibold tracking-[-0.02em]">Ask Frankly</h1>
           {off && <ComingSoonBadge />}
         </div>
         <p className="mt-1 text-[14.5px] text-muted">
-          Thinking about a purchase? Frank checks your real budgets and goals, then gives you a
+          Thinking about a purchase? Frankly checks your real budgets and goals, then gives you a
           straight answer.
         </p>
       </div>
@@ -140,10 +140,10 @@ function ComingSoonNotice() {
   return (
     <Card className="flex flex-col gap-3">
       <p className="font-display text-[19px] font-semibold tracking-[-0.01em] text-ink">
-        Frank's verdicts are on the way.
+        Frankly's verdicts are on the way.
       </p>
       <p className="text-[14.5px] leading-relaxed text-ink-2">
-        Asking Frank means running your numbers through a model, so it's switched off for now.
+        Asking Frankly means running your numbers through a model, so it's switched off for now.
         Everything that doesn't cost anything still works — your safe-to-spend, budgets, goals and
         insights are all live on the other tabs.
       </p>
@@ -165,7 +165,9 @@ function FinalVerdict({ verdict }: { verdict: AdviceVerdict }) {
       >
         <VerdictStamp verdict={verdict.verdict} size={92} animate />
         <div className="min-w-0">
-          <p className="text-[11px] font-bold tracking-[0.12em] text-muted uppercase">Frank says</p>
+          <p className="text-[11px] font-bold tracking-[0.12em] text-muted uppercase">
+            Frankly says
+          </p>
           <p
             className="mt-1.5 font-display text-[34px] leading-none font-bold tracking-[-0.02em]"
             style={{
@@ -181,7 +183,7 @@ function FinalVerdict({ verdict }: { verdict: AdviceVerdict }) {
         {verdict.evidence.length > 0 && (
           <div>
             <div className="mb-3 text-[12px] font-semibold tracking-[0.1em] text-muted uppercase">
-              What Frank looked at
+              What Frankly looked at
             </div>
             <div className="flex flex-col gap-2.5">
               {verdict.evidence.map((e, i) => (
@@ -242,14 +244,14 @@ function History() {
   if (!history.data || history.data.length === 0) {
     return (
       <section className="flex flex-col gap-3">
-        <SectionLabel>You asked, Frank said, you did</SectionLabel>
-        <EmptyState title="No questions yet" hint="Ask Frank about a purchase you're weighing." />
+        <SectionLabel>You asked, Frankly said, you did</SectionLabel>
+        <EmptyState title="No questions yet" hint="Ask Frankly about a purchase you're weighing." />
       </section>
     );
   }
   return (
     <section className="flex flex-col gap-3">
-      <SectionLabel>You asked, Frank said, you did</SectionLabel>
+      <SectionLabel>You asked, Frankly said, you did</SectionLabel>
       <Card className="p-0">
         {history.data.map((item) => (
           <HistoryRow key={item.id} item={item} />

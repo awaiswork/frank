@@ -32,6 +32,9 @@
   --cat-bills: #9c97b4;
   --cat-savings: #e7c24b;
   --cat-health: #e58ba0;
+  /* The logo's full-stop sits on an --ink tile, which is light here — so it
+     takes the *light* theme's green. See components/Logo.tsx. */
+  --mark-dot: #1f7a4d;
   --shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 18px 40px -24px rgba(0, 0, 0, 0.7);
 }
 
@@ -66,6 +69,7 @@
   --cat-bills: #67637f;
   --cat-savings: #9c7507;
   --cat-health: #b14a5c;
+  --mark-dot: #63c68c;
   --shadow: 0 1px 0 rgba(255, 255, 255, 0.6), 0 22px 44px -28px rgba(40, 34, 20, 0.35);
 }
 
@@ -101,7 +105,7 @@
   --radius-card: 16px;
   --radius-input: 11px;
 
-  --ease-frank: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-frankly: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* --- Base ------------------------------------------------------------------- */
@@ -224,19 +228,19 @@
 
 .animate-bar-grow {
   transform-origin: left;
-  animation: barGrow 0.8s var(--ease-frank) both;
+  animation: barGrow 0.8s var(--ease-frankly) both;
 }
 .animate-fade-up {
-  animation: fadeUp 0.4s var(--ease-frank) both;
+  animation: fadeUp 0.4s var(--ease-frankly) both;
 }
 .animate-field-in {
-  animation: fieldIn 0.5s var(--ease-frank) both;
+  animation: fieldIn 0.5s var(--ease-frankly) both;
 }
 .animate-pop {
-  animation: pop 0.3s var(--ease-frank) both;
+  animation: pop 0.3s var(--ease-frankly) both;
 }
 .animate-tick {
-  animation: tick 0.25s var(--ease-frank) both;
+  animation: tick 0.25s var(--ease-frankly) both;
 }
 .animate-spin-fast {
   animation: spin 0.7s linear infinite;
@@ -245,7 +249,7 @@
   animation: breathe 3.4s ease-in-out infinite;
 }
 .animate-stamp {
-  animation: stampIn 0.6s var(--ease-frank) both;
+  animation: stampIn 0.6s var(--ease-frankly) both;
 }
 
 /* Quick-add sheet: slides up from the thumb on touch, settles in place on desktop. */
@@ -268,10 +272,10 @@
   }
 }
 .animate-fade-in {
-  animation: fadeIn 0.18s var(--ease-frank) both;
+  animation: fadeIn 0.18s var(--ease-frankly) both;
 }
 .animate-sheet-in {
-  animation: sheetIn 0.28s var(--ease-frank) both;
+  animation: sheetIn 0.28s var(--ease-frankly) both;
 }
 
 /* --- Ambient field (living interface) -------------------------------------- */
@@ -298,7 +302,7 @@
   position: absolute;
   inset: -25%;
   opacity: 0;
-  transition: opacity 1.8s var(--ease-frank);
+  transition: opacity 1.8s var(--ease-frankly);
   background:
     radial-gradient(38% 36% at 16% 14%, var(--glow), transparent 60%),
     radial-gradient(42% 40% at 88% 86%, var(--glow), transparent 62%);

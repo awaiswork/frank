@@ -1,7 +1,7 @@
 """Feature gating for the model-backed features — the only ones that cost API usage.
 
 Three features call Anthropic and therefore bill: natural-language capture (§7b),
-the Advisor (§7c) and Frank's AI-written daily note. They ship **off** — marked
+the Advisor (§7c) and Frankly's AI-written daily note. They ship **off** — marked
 "coming soon" in the UI — and are switched on together with ``LLM_ENABLED=true``
 plus a real ``ANTHROPIC_API_KEY``.
 
@@ -33,8 +33,8 @@ class AiFeature(StrEnum):
 
 LABELS: dict[AiFeature, str] = {
     AiFeature.NL_CAPTURE: "Natural-language capture",
-    AiFeature.ADVISOR: "Ask Frank",
-    AiFeature.DAILY_NOTE: "Frank's daily note",
+    AiFeature.ADVISOR: "Ask Frankly",
+    AiFeature.DAILY_NOTE: "Frankly's daily note",
 }
 
 
@@ -54,7 +54,7 @@ def ai_enabled() -> bool:
 
 def coming_soon_detail(feature: AiFeature) -> str:
     return (
-        f"{LABELS[feature]} is coming soon — Frank's AI features are switched off "
+        f"{LABELS[feature]} is coming soon — Frankly's AI features are switched off "
         "in this build. Everything else works as normal."
     )
 

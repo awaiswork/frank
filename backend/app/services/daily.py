@@ -1,6 +1,6 @@
-"""Frank's daily note (the retention hook).
+"""Frankly's daily note (the retention hook).
 
-Once a day, Frank looks at the user's real aggregates and says *one* human thing.
+Once a day, Frankly looks at the user's real aggregates and says *one* human thing.
 The day's **mood** is computed deterministically here (so it can also drive the
 client's ambient interface), and the model writes the note *in that mood's tone* —
 never inventing numbers, never shaming. Falls back to a sensible hand-written line
@@ -69,7 +69,7 @@ def compute_mood(context: dict[str, Any], today: dt.date) -> Mood:
 
 
 _DAILY_SYSTEM = (
-    "You are Frank, a candid but warm spending companion. Each day you greet the user with ONE "
+    "You are Frankly, a candid but warm spending companion. Each day you greet the user with ONE "
     "short check-in about their money — like a sharp friend who has seen their account and is on "
     "their side. Use ONLY the numbers in the provided context; ground the note in a specific "
     "figure when it helps, but never recite a list of stats. Never shame: an over-budget day gets "
@@ -87,14 +87,14 @@ _DAILY_SYSTEM = (
     "'good morning' — the app shows those. "
     "headline: 2-4 words, a glanceable read (e.g. 'Comfortably ahead', 'Ease off a touch', "
     '"Let\'s recover"). '
-    "note: 1-2 sentences, max ~35 words, second person, in Frank's voice, ideally with one "
+    "note: 1-2 sentences, max ~35 words, second person, in Frankly's voice, ideally with one "
     "concrete forward-looking suggestion. "
     "Format money with a comma decimal and trailing € (e.g. 40,00 €; negatives like −29,90 €)."
 )
 
 DAILY_TOOL: dict[str, Any] = {
     "name": DAILY_TOOL_NAME,
-    "description": "Return Frank's daily check-in note.",
+    "description": "Return Frankly's daily check-in note.",
     "input_schema": {
         "type": "object",
         "properties": {

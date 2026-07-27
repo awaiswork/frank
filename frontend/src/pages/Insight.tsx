@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useInsights } from '../api/hooks';
-import { FrankCallout } from '../components/bits';
+import { FranklyCallout } from '../components/bits';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { Card, EmptyState } from '../components/ui';
 import { categoryColor } from '../lib/categoryColor';
@@ -43,7 +43,7 @@ export function Insight() {
     thisTotal === 0
       ? 'Nothing logged yet this month.'
       : prevTotal === 0
-        ? 'Your first month with Frank.'
+        ? 'Your first month with Frankly.'
         : delta < 0
           ? 'A lighter month than last.'
           : delta > 0
@@ -163,10 +163,10 @@ export function Insight() {
           )}
 
           {topIncrease && (
-            <FrankCallout>
+            <FranklyCallout>
               If you want one thing to act on: keep an eye on{' '}
               {topIncrease.category_name ?? 'that category'} next month — it's where the creep is.
-            </FrankCallout>
+            </FranklyCallout>
           )}
         </>
       )}

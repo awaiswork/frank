@@ -44,7 +44,7 @@ async def ask(
                     verdict = payload["verdict"]
                     usage = payload
         except advisor.AdvisorError:
-            yield _sse("error", {"detail": "Frank couldn't form a verdict. Try rephrasing."})
+            yield _sse("error", {"detail": "Frankly couldn't form a verdict. Try rephrasing."})
             return
 
         assert verdict is not None
@@ -81,7 +81,7 @@ async def ask(
 
 @router.get("/daily", response_model=DailyNoteOut)
 async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
-    """Frank's check-in for today — one note a day, rewritten if the day turns.
+    """Frankly's check-in for today — one note a day, rewritten if the day turns.
 
     The mood is recomputed live on every read, so the note can never contradict the
     numbers on screen: a note written for 'go' this morning is stale once the user

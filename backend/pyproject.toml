@@ -1,7 +1,7 @@
 [project]
-name = "frank-backend"
+name = "frankly-backend"
 version = "0.1.0"
-description = "Frank — AI spending advisor API"
+description = "Frankly — AI spending advisor API"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

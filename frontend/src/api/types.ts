@@ -146,7 +146,7 @@ export interface AdviceHistory {
 }
 
 // --- Daily note (the hook) ---
-/** 'unknown' = no income on file, so Frank owes a setup prompt, not a verdict. */
+/** 'unknown' = no income on file, so Frankly owes a setup prompt, not a verdict. */
 export type DayMood = 'go' | 'wait' | 'over' | 'unknown';
 
 export interface DailyNote {

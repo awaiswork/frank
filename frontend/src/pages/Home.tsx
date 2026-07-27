@@ -4,7 +4,7 @@ import type { Category } from '../api/types';
 import { BudgetBar } from '../components/BudgetBar';
 import { Capture } from '../components/Capture';
 import { CategoryAvatar } from '../components/CategoryAvatar';
-import { FrankDaily } from '../components/FrankDaily';
+import { FranklyDaily } from '../components/FranklyDaily';
 import { AiBadge } from '../components/bits';
 import { Money } from '../components/Money';
 import { Card, EmptyState } from '../components/ui';
@@ -39,7 +39,7 @@ export function Home() {
 
   return (
     <div className="animate-fade-up flex flex-col gap-[18px]">
-      <FrankDaily />
+      <FranklyDaily />
 
       {/* Safe-to-spend hero. With no income on file the figure is just negative
           spend, so we show what we actually know and ask for the missing number
@@ -190,7 +190,7 @@ function NeedsIncome({ spentCents, monthName }: { spentCents: number; monthName:
         </span>
       </div>
       <p className="mt-2 max-w-[46ch] text-[14.5px] leading-relaxed text-ink-2">
-        That's everything you've logged in {monthName}. Tell Frank your monthly income and he can
+        That's everything you've logged in {monthName}. Tell Frankly your monthly income and it can
         work out what's actually safe to spend.
       </p>
       <Link

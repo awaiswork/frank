@@ -5,7 +5,7 @@ import type { Category, Kind, NlDraft } from '../api/types';
 import { categoryColor } from '../lib/categoryColor';
 import { parseAmountToCents } from '../lib/money';
 import { QuickAdd } from './QuickAdd';
-import { ComingSoonBadge, FrankCallout } from './bits';
+import { ComingSoonBadge, FranklyCallout } from './bits';
 import { Button } from './ui';
 
 type DraftItem = NlDraft & { _id: string };
@@ -22,7 +22,7 @@ const TICKS = [
 
 /**
  * Natural-language capture (technical-plan.md §7b, design "Capture"). Type it
- * like you'd say it; Frank parses into drafts you confirm before anything saves.
+ * like you'd say it; Frankly parses into drafts you confirm before anything saves.
  *
  * Parsing is the only part that costs API usage, so when it's switched off this
  * falls back to the manual form below — logging spend must never stop working.
@@ -62,7 +62,7 @@ function NlCapture({ placeholder }: { placeholder?: string }) {
         setText('');
       },
       onError: (err) =>
-        setError(err instanceof ApiError ? err.message : 'Frank could not read that.'),
+        setError(err instanceof ApiError ? err.message : 'Frankly could not read that.'),
     });
   }
 
@@ -92,7 +92,7 @@ function NlCapture({ placeholder }: { placeholder?: string }) {
         </span>
         <input
           className="min-w-0 flex-1 bg-transparent py-2 text-[16px] text-ink placeholder:text-faint focus:outline-none"
-          placeholder={placeholder ?? 'Tell Frank what you spent — “8,40 coffee and croissant”'}
+          placeholder={placeholder ?? 'Say what you spent — “8,40 coffee and croissant”'}
           value={text}
           onChange={(e) => setText(e.target.value)}
           maxLength={500}
@@ -110,7 +110,7 @@ function NlCapture({ placeholder }: { placeholder?: string }) {
         >
           <div className="mb-4 flex items-center gap-2.5 text-[14.5px] font-semibold">
             <span className="animate-spin-fast inline-block h-4 w-4 rounded-full border-2 border-line-2 border-t-ink" />
-            Frank is reading “{reading}”
+            Frankly is reading “{reading}”
           </div>
           <div className="flex flex-col gap-2.5">
             {TICKS.map((label, i) => {
@@ -172,7 +172,7 @@ function NlCapture({ placeholder }: { placeholder?: string }) {
 }
 
 /**
- * What sits here while Frank's reading is switched off: the natural-language bar
+ * What sits here while Frankly's reading is switched off: the natural-language bar
  * shown as the thing it will be, over a button into the quick-add sheet — which is
  * now the real way to log, on every screen. No second inline form to maintain.
  */
@@ -202,17 +202,17 @@ function ManualCapture() {
           className="min-w-0 flex-1 cursor-not-allowed bg-transparent py-2 text-[15px] text-faint"
           value=""
           readOnly
-          placeholder="Tell Frank what you spent — “8,40 coffee”"
+          placeholder="Say what you spent — “8,40 coffee”"
           aria-label="Natural-language capture (coming soon)"
         />
         <ComingSoonBadge className="hidden sm:inline-block" />
       </div>
 
-      <FrankCallout>
+      <FranklyCallout>
         I can't read your sentences just yet — that's coming. Tap below (or press{' '}
         <kbd className="rounded border border-line-2 px-1 text-[11px] font-bold">A</kbd>) and it
         takes a couple of seconds.
-      </FrankCallout>
+      </FranklyCallout>
 
       <Button type="button" onClick={() => setAdding(true)} className="w-full">
         Log an expense
@@ -302,7 +302,7 @@ function DraftCard({
           </svg>
         </span>
         <span className="text-[14.5px] font-semibold text-ink">
-          Logged. <span className="font-normal text-muted">Frank's got it.</span>
+          Logged. <span className="font-normal text-muted">Frankly's got it.</span>
         </span>
       </div>
     );
@@ -315,7 +315,7 @@ function DraftCard({
     >
       <div className="flex items-center justify-between border-b border-line px-[18px] py-3">
         <span className="text-[12px] text-muted">
-          Frank is{' '}
+          Frankly is{' '}
           <span className="font-semibold" style={{ color: conf.color }}>
             {conf.label}
           </span>

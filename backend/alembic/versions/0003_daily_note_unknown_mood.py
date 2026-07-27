@@ -4,7 +4,7 @@ Revision ID: 0003
 Revises: 0002
 Create Date: 2026-07-27
 
-A user with no monthly income on file has no meaningful safe-to-spend, so Frank
+A user with no monthly income on file has no meaningful safe-to-spend, so Frankly
 must not read them as 'go' (which claimed they were "within their means" off the
 back of a 0 income fallback). 'unknown' is the honest fourth state.
 

@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const authenticate = useCallback(
     async (path: '/auth/login' | '/auth/register', email: string, password: string) => {
       // Drop any cached data from a prior session so one account never sees
-      // another's (e.g. Frank's daily note, which we keep fresh for an hour).
+      // another's (e.g. Frankly's daily note, which we keep fresh for an hour).
       queryClient.clear();
       const token = await apiFetch<TokenOut>(path, {
         method: 'POST',

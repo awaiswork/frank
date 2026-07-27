@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useContribute, useCreateGoal, useGoals, useUpdateGoal } from '../api/hooks';
 import type { Goal } from '../api/types';
 import { CategoryAvatar } from '../components/CategoryAvatar';
-import { FrankCallout } from '../components/bits';
+import { FranklyCallout } from '../components/bits';
 import { Button, Card, EmptyState, Field, SectionLabel, TextInput } from '../components/ui';
 import { formatMoney, moneyParts, parseAmountToCents } from '../lib/money';
 
@@ -108,7 +108,9 @@ function GoalCard({ goal }: { goal: Goal }) {
 
       {reached ? (
         <div className="mt-4">
-          <FrankCallout tone="go">That's done. Move the money over when you're ready.</FrankCallout>
+          <FranklyCallout tone="go">
+            That's done. Move the money over when you're ready.
+          </FranklyCallout>
         </div>
       ) : (
         <div className="mt-4 flex items-center gap-2">

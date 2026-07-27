@@ -1,4 +1,4 @@
-# Frank — Design System
+# Frankly — Design System
 
 Distilled from the design prototype (the "build specs" / redline screen). This is the
 **source of truth for M2+ UI work** (technical-plan §9). Values are exact — implement them as
@@ -12,12 +12,12 @@ styled to these tokens.
 
 ## Product shape (what the UI is for)
 
-Frank is an AI spending advisor. The UI centres on two AI moments and the supporting money views:
+Frankly is an AI spending advisor. The UI centres on two AI moments and the supporting money views:
 
 - **Capture** — natural-language transaction entry. User types it like they'd say it
-  ("8,40 coffee and croissant"); Frank parses amount / category / merchant / date into a **draft**
+  ("8,40 coffee and croissant"); Frankly parses amount / category / merchant / date into a **draft**
   the user confirms before anything saves. (Backs M3.)
-- **Advisor ("Ask Frank")** — "Should I buy…" → Frank checks real budgets + goals, then returns one
+- **Advisor ("Ask Frankly")** — "Should I buy…" → Frankly checks real budgets + goals, then returns one
   of four **verdicts** as a stamp with evidence and expandable reasoning. (Backs M4.)
 - Supporting screens: Home (safe-to-spend), Transactions, Budgets, Goals, Insight, Settings,
   Onboarding (3 steps).
@@ -32,7 +32,7 @@ glyph + label:
 | Skip        | `--skip`| double (dotted `2 6` + inner ring) | minus | a supportive no — **never red** |
 | Your call   | `--call`| dotted `3 5`            | up/down chevrons | genuinely the user's decision |
 
-Skip is deliberately a calm slate-blue, not red — Frank is non-judgmental.
+Skip is deliberately a calm slate-blue, not red — Frankly is non-judgmental.
 
 ---
 
@@ -91,7 +91,7 @@ Defined per `[data-theme="dark"]` / `[data-theme="light"]`. Dark is the prototyp
 | `--cat-health`   | `#E58BA0` | `#B14A5C` | Category: Health                      |
 | `--focus`        | `#E7C24B` | `#9A6A09` | Focus ring                            |
 
-**Soft tints** back verdict headers and "frank" callouts:
+**Soft tints** back verdict headers and "frankly" callouts:
 `--go-soft` `#15291E`/`#E6F1EA`, `--wait-soft` `#2A2310`/`#F4ECD9`, `--skip-soft` `#15212E`/`#E8EDF6`,
 `--call-soft` `#211B31`/`#ECE8F8`, `--over-soft` `#2C1C12`/`#F7E7DF`.
 

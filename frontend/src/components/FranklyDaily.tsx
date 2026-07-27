@@ -10,7 +10,7 @@ function greeting(): string {
 }
 
 /**
- * Frank's daily check-in — the home hero and the app's reason to open daily. One
+ * Frankly's daily check-in — the home hero and the app's reason to open daily. One
  * opinionated line grounded in today's real numbers, with the day's mood (which
  * also drives the ambient field) and a quiet streak.
  *
@@ -18,7 +18,7 @@ function greeting(): string {
  * features off: the server just serves the hand-written note for the day's mood
  * instead of paying for one. Nothing to gate here.
  */
-export function FrankDaily() {
+export function FranklyDaily() {
   const daily = useDailyNote();
   const today = new Date();
   const dateLong = today.toLocaleDateString('en-GB', {
@@ -61,7 +61,7 @@ export function FrankDaily() {
         {daily.isLoading ? (
           <div className="flex items-center gap-2.5 text-[15px] text-muted">
             <span className="animate-spin-fast inline-block h-[18px] w-[18px] rounded-full border-2 border-line-2 border-t-ink" />
-            Frank's reading your numbers…
+            Reading your numbers…
           </div>
         ) : d ? (
           <>
@@ -74,11 +74,11 @@ export function FrankDaily() {
             <p className="mt-2 max-w-[54ch] text-[15.5px] leading-relaxed text-ink-2 text-pretty">
               {d.note}
             </p>
-            <p className="mt-2.5 font-display text-[12.5px] font-bold text-muted">— frank</p>
+            <p className="mt-2.5 font-display text-[12.5px] font-bold text-muted">— frankly</p>
           </>
         ) : (
           <p className="text-[15px] text-muted">
-            Frank's note is taking a moment — log something and check back.
+            Today's note is taking a moment — log something and check back.
           </p>
         )}
       </div>
@@ -90,7 +90,7 @@ function StreakChip({ days, color }: { days: number; color: string }) {
   return (
     <span
       className="flex items-center gap-1 rounded-full bg-inset px-2.5 py-1 text-[12px] font-bold"
-      title={`${days}-day streak with Frank`}
+      title={`${days}-day streak with Frankly`}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill={color} aria-hidden="true">
         <path d="M13 2c.4 3-2 4.2-2 6.6A2.4 2.4 0 0 0 13.4 11c1-.7 1.1-1.9 1.1-1.9 1.7 1.3 3 3.3 3 5.6a5.5 5.5 0 1 1-11 0c0-3.3 2.6-4.9 3.1-8.2C9.9 4.4 11.1 2.9 13 2z" />

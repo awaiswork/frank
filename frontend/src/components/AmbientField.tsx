@@ -7,7 +7,7 @@ import { useDailyNote } from '../api/hooks';
  * when over (never an alarm). Three cross-fading layers so a mood change melts in
  * rather than snapping.
  *
- * Reads the same server mood as Frank's note, so the glow and the chip can never
+ * Reads the same server mood as Frankly's note, so the glow and the chip can never
  * disagree. The daily query is invalidated on every money write, so this still
  * shifts the moment you log something.
  */

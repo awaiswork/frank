@@ -67,12 +67,12 @@ def login(body: LoginIn, response: Response, db: DbSession) -> TokenOut:
 @router.post("/auth/refresh", response_model=TokenOut)
 def refresh(
     db: DbSession,
-    frank_refresh: Annotated[str | None, Cookie()] = None,
+    frankly_refresh: Annotated[str | None, Cookie()] = None,
 ) -> TokenOut:
-    if frank_refresh is None:
+    if frankly_refresh is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing refresh token")
     try:
-        user_id = decode_token(frank_refresh, REFRESH)
+        user_id = decode_token(frankly_refresh, REFRESH)
     except jwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token") from exc
     user = db.get(User, user_id)

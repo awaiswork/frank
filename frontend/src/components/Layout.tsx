@@ -3,6 +3,7 @@ import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
 import { AmbientField } from './AmbientField';
+import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
 
 type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
@@ -81,7 +82,7 @@ function useTheme(): ['dark' | 'light', () => void] {
     const next = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     try {
-      localStorage.setItem('frank-theme', next);
+      localStorage.setItem('frankly-theme', next);
     } catch {
       /* ignore */
     }
@@ -92,7 +93,7 @@ function useTheme(): ['dark' | 'light', () => void] {
 
 const PRIMARY: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/', 'Home', 'home'],
-  ['/advisor', 'Ask Frank', 'advisor'],
+  ['/advisor', 'Ask Frankly', 'advisor'],
 ];
 const RECORDS: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/transactions', 'Transactions', 'transactions'],
@@ -147,7 +148,7 @@ export function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const advisorSoon = ready && !features.advisor;
 
-  // Logging is the thing people open Frank to do, so it gets a global shortcut:
+  // Logging is the thing people open Frankly to do, so it gets a global shortcut:
   // "a" for add (ignored while typing, so it never eats a keystroke) and ⌘/Ctrl-K.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -175,7 +176,7 @@ export function Layout() {
 
   // First-run users (no income yet) land in onboarding until they finish or skip.
   const needsOnboarding =
-    user != null && user.monthly_income_cents == null && !localStorage.getItem('frank-onboarded');
+    user != null && user.monthly_income_cents == null && !localStorage.getItem('frankly-onboarded');
   if (needsOnboarding) return <Navigate to="/onboarding" replace />;
 
   const today = new Date();
@@ -214,12 +215,7 @@ export function Layout() {
       </svg>
     );
 
-  const wordmark = (
-    <div className="flex items-baseline gap-px">
-      <span className="font-display text-[25px] font-bold tracking-[-0.02em] text-ink">frank</span>
-      <span className="font-display text-[25px] font-bold text-go">.</span>
-    </div>
-  );
+  const wordmark = <Wordmark />;
 
   return (
     <>
@@ -411,7 +407,7 @@ function MoreSheet({
   daysLeft: number;
 }) {
   const items: ReadonlyArray<readonly [string, string, IconName]> = [
-    ['/advisor', 'Ask Frank', 'advisor'],
+    ['/advisor', 'Ask Frankly', 'advisor'],
     ['/goals', 'Goals', 'goals'],
     ['/insights', 'Insight', 'insight'],
     ['/settings', 'Settings', 'settings'],

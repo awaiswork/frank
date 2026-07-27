@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24h
     refresh_token_expire_days: int = 30
-    refresh_cookie_name: str = "frank_refresh"
+    refresh_cookie_name: str = "frankly_refresh"
 
     @property
     def is_prod(self) -> bool:

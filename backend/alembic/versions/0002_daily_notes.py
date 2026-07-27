@@ -1,4 +1,4 @@
-"""daily notes (Frank's daily check-in)
+"""daily notes (Frankly's daily check-in)
 
 Revision ID: 0002
 Revises: 0001

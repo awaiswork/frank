@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCategories, useCreateGoal, useUpdateMe, useUpsertBudget } from '../api/hooks';
 import type { Category } from '../api/types';
 import { useAuth } from '../auth/useAuth';
+import { Wordmark } from '../components/Logo';
 import { Button, TextInput } from '../components/ui';
 import { categoryColor } from '../lib/categoryColor';
 import { currentMonth } from '../lib/date';
@@ -33,7 +34,7 @@ export function Onboarding() {
 
   function finish() {
     try {
-      localStorage.setItem('frank-onboarded', '1');
+      localStorage.setItem('frankly-onboarded', '1');
     } catch {
       /* ignore */
     }
@@ -88,12 +89,7 @@ export function Onboarding() {
       <div className="animate-fade-up w-full max-w-[440px]">
         {/* Wordmark + progress */}
         <div className="mb-7 flex flex-col items-center gap-4">
-          <div className="flex items-baseline gap-px">
-            <span className="font-display text-[26px] font-bold tracking-[-0.02em] text-ink">
-              frank
-            </span>
-            <span className="font-display text-[26px] font-bold text-go">.</span>
-          </div>
+          <Wordmark size={26} />
           <div className="flex w-full max-w-[220px] gap-1.5">
             {Array.from({ length: STEPS }, (_, i) => (
               <div
@@ -115,7 +111,7 @@ export function Onboarding() {
             <Step
               eyebrow="Welcome"
               title="What do you earn each month?"
-              blurb="After tax, roughly. Frank uses it to figure out what's safe to spend — you can change it any time."
+              blurb="After tax, roughly. Frankly uses it to figure out what's safe to spend — you can change it any time."
             >
               <MoneyInput value={income} onChange={setIncome} placeholder="3200" autoFocus />
             </Step>
@@ -198,7 +194,7 @@ export function Onboarding() {
             <Step
               eyebrow="One more thing"
               title="Saving for something?"
-              blurb="Optional. Add a goal and Frank will weigh it before telling you to splurge."
+              blurb="Optional. Add a goal and Frankly will weigh it before telling you to splurge."
             >
               <div className="flex flex-col gap-3">
                 <TextInput

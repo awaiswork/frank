@@ -1,4 +1,4 @@
-# Frank — AI Spending Advisor
+# Frankly — AI Spending Advisor
 
 A personal finance app with two AI features at its core: natural-language transaction
 capture and a spending advisor that reasons over your real data.
@@ -9,7 +9,7 @@ Anthropic API (Claude).
 ## AI features are off by default
 
 Three features call the Anthropic API and therefore cost money: natural-language
-capture, Ask Frank, and the written daily note. They ship **disabled** and show as
+capture, Ask Frankly, and the written daily note. They ship **disabled** and show as
 "coming soon" in the UI. Everything else — logging spend by hand, budgets, goals,
 safe-to-spend, insights, CSV export — works untouched, and the daily note falls back
 to a hand-written line for the day's (still deterministic) mood.

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useBudgets, useCategories, useUpsertBudget } from '../api/hooks';
 import type { BudgetActual, Category } from '../api/types';
 import { BudgetBar } from '../components/BudgetBar';
-import { FrankCallout } from '../components/bits';
+import { FranklyCallout } from '../components/bits';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { Button, Card, TextInput } from '../components/ui';
 import { categoryColor } from '../lib/categoryColor';
@@ -174,12 +174,12 @@ function BudgetRow({
           </div>
           {over && (
             <div className="mt-2.5">
-              <FrankCallout tone="over">
+              <FranklyCallout tone="over">
                 You've crossed the line — {daysLeft} days to go.{' '}
                 <button onClick={() => setEditing(true)} className="font-semibold underline">
                   Nudge the limit?
                 </button>
-              </FrankCallout>
+              </FranklyCallout>
             </div>
           )}
         </>

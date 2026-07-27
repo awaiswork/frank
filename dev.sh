@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Start Frank's whole local dev stack with one command: Postgres, the FastAPI
+# Start Frankly's whole local dev stack with one command: Postgres, the FastAPI
 # backend, and the Vite frontend. Ctrl-C stops the backend and frontend; the db
 # container is left running (stop it with `docker compose down`).
 #
@@ -88,7 +88,7 @@ log "starting frontend → http://localhost:$WEB_PORT"
 web_pid=$!
 
 printf '\n'
-log "Frank is up. Ctrl-C to stop."
+log "Frankly is up. Ctrl-C to stop."
 printf '\n'
 
 # Exit as soon as either server dies, so a crash doesn't leave a half-up stack.

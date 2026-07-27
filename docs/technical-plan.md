@@ -1,6 +1,6 @@
-# Technical Plan — "Frank", the AI Spending Advisor
+# Technical Plan — "Frankly", the AI Spending Advisor
 
-> **How to use this document:** This is the complete technical specification for building Frank end to end. It is written to be handed to Claude Code together with the design screens. Decisions are already made — follow them unless something is impossible, in which case flag it and propose the closest alternative. Build in the milestone order in §13.
+> **How to use this document:** This is the complete technical specification for building Frankly end to end. It is written to be handed to Claude Code together with the design screens. Decisions are already made — follow them unless something is impossible, in which case flag it and propose the closest alternative. Build in the milestone order in §13.
 
 ---
 
@@ -155,8 +155,8 @@ These four queries are interview material — keep them readable, commented, and
 - Model: `claude-sonnet-4-6`, streamed (SSE) to the frontend so the reasoning renders progressively.
 - **Context builder** (`services/advisor.py`): never send raw transaction rows. Send compact aggregates: current month budget-vs-actual per category (from §6.2), safe-to-spend (§6.3), goals with progress and due dates, last 3 advice requests + verdicts, and the trailing-30-day burn rate. Target < 1,500 input tokens. Store the exact context in `context_snapshot` for reproducibility.
 - Output: tool-forced structured response `{ verdict: go|wait|skip|your_call, headline: str, evidence: list[{label, value}], reasoning: str }` mapping 1:1 to the verdict card in the design.
-- System prompt rules: ground every claim in the provided numbers; never invent data; be candid but kind; if the question is not a purchase decision, use `your_call` and say what info is missing; always include the static disclaimer field (UI renders it small): *Frank gives opinions based on your data, not professional financial advice.*
-- Follow-up endpoint `PATCH /advisor/{id}` sets `user_followed` — powers the "you asked / Frank said / you did" history.
+- System prompt rules: ground every claim in the provided numbers; never invent data; be candid but kind; if the question is not a purchase decision, use `your_call` and say what info is missing; always include the static disclaimer field (UI renders it small): *Frankly gives opinions based on your data, not professional financial advice.*
+- Follow-up endpoint `PATCH /advisor/{id}` sets `user_followed` — powers the "you asked / Frankly said / you did" history.
 
 ## 8. API surface (FastAPI routers; OpenAPI auto-generated — frontend consumes the generated types via `openapi-typescript`)
 

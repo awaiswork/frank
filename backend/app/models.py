@@ -130,7 +130,7 @@ class GoalContribution(UUIDPk, Timestamped, Base):
 
 
 class DailyNote(UUIDPk, Timestamped, Base):
-    """Frank's once-a-day check-in (the daily hook). One row per user per day; the
+    """Frankly's once-a-day check-in (the daily hook). One row per user per day; the
     row's existence also *is* the "checked in today" signal the streak is built on."""
 
     __tablename__ = "daily_notes"

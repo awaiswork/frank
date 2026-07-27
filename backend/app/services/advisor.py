@@ -23,7 +23,7 @@ from app.services.aggregates import budget_vs_actual, daily_burn_rate, safe_to_s
 
 ADVISOR_MODEL = "claude-sonnet-4-6"
 TOOL_NAME = "give_verdict"
-DISCLAIMER = "Frank gives opinions based on your data, not professional financial advice."
+DISCLAIMER = "Frankly gives opinions based on your data, not professional financial advice."
 
 VerdictKind = Literal["go", "wait", "skip", "your_call"]
 
@@ -116,7 +116,7 @@ def build_context(db: Session, user: User, today: dt.date) -> dict[str, Any]:
 
 
 _SYSTEM = (
-    "You are Frank, a candid but kind spending advisor. Answer the user's purchase "
+    "You are Frankly, a candid but kind spending advisor. Answer the user's purchase "
     "question using ONLY the numbers in the provided context — never invent data, and "
     "ground every claim in a specific figure. Call the `give_verdict` tool exactly once.\n"
     "Verdicts: 'go' = comfortably within their means; 'wait' = fine but better after "
@@ -137,7 +137,7 @@ _EVIDENCE_SCHEMA: dict[str, Any] = {
 
 VERDICT_TOOL: dict[str, Any] = {
     "name": TOOL_NAME,
-    "description": "Return Frank's verdict on the purchase question.",
+    "description": "Return Frankly's verdict on the purchase question.",
     "input_schema": {
         "type": "object",
         "properties": {

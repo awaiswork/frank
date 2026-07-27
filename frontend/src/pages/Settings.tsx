@@ -35,7 +35,7 @@ export function Settings() {
         </Card>
       </Block>
 
-      <Block label="Frank's AI">
+      <Block label="Frankly's AI">
         <AiFeaturesCard />
       </Block>
 
@@ -117,10 +117,10 @@ function AiFeaturesCard() {
   const rows: ReadonlyArray<readonly [string, string, boolean]> = [
     [
       'Natural-language capture',
-      'Type “8,40 coffee” and have Frank fill in the rest.',
+      'Type “8,40 coffee” and have Frankly fill in the rest.',
       features.nl_capture,
     ],
-    ['Ask Frank', 'A grounded verdict on a purchase you’re weighing.', features.advisor],
+    ['Ask Frankly', 'A grounded verdict on a purchase you’re weighing.', features.advisor],
     ['Written daily note', 'Today’s check-in, written fresh each morning.', features.ai_daily_note],
   ];
 
@@ -142,7 +142,7 @@ function AiFeaturesCard() {
       ))}
       {ready && !features.ai_enabled && (
         <p className="text-[13px] leading-relaxed text-muted">
-          These three are the only parts of Frank that call a model, so they're off for now. Your
+          These three are the only parts of Frankly that call a model, so they're off for now. Your
           numbers, budgets, goals and insights are unaffected — and you can still log everything by
           hand.
         </p>
@@ -179,7 +179,7 @@ function IncomeRow({
 
   if (!editing) {
     return (
-      <Row label="Monthly income" hint="Frank uses this to work out what's safe to spend.">
+      <Row label="Monthly income" hint="Frankly uses this to work out what's safe to spend.">
         <div className="flex items-center gap-3">
           <span className="num text-[15px] font-semibold text-ink">
             {incomeCents != null ? formatMoney(incomeCents) : 'Not set'}
@@ -250,7 +250,7 @@ function ExportRow() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `frank-${month}.csv`;
+    a.download = `frankly-${month}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }

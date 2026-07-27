@@ -60,7 +60,7 @@ export async function askAdvisor(
 
   const res = await send(true);
   if (!res.ok || !res.body) {
-    handlers.onError('Frank is unavailable right now.');
+    handlers.onError('Frankly is unavailable right now.');
     return;
   }
 
@@ -84,7 +84,7 @@ export async function askAdvisor(
       } else if (ev.event === 'verdict') {
         handlers.onVerdict(ev.data as unknown as AdviceVerdict);
       } else if (ev.event === 'error') {
-        handlers.onError(String(ev.data.detail ?? 'Frank could not form a verdict.'));
+        handlers.onError(String(ev.data.detail ?? 'Frankly could not form a verdict.'));
       } else if (ev.event === 'done') {
         handlers.onDone?.();
       }

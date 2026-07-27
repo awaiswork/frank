@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
+import { Mark } from '../components/Logo';
 import { Button, Card, Field, TextInput } from '../components/ui';
 
 export function Login() {
@@ -31,8 +32,9 @@ export function Login() {
   return (
     <div className="grid min-h-svh place-items-center px-4">
       <div className="w-full max-w-sm animate-fade-up">
-        <div className="mb-6 text-center">
-          <h1 className="font-display text-[34px] font-bold text-ink">Frank</h1>
+        <div className="mb-6 flex flex-col items-center text-center">
+          <Mark size={52} />
+          <h1 className="mt-3.5 font-display text-[34px] font-bold text-ink">Frankly</h1>
           <p className="mt-1 text-[14.5px] text-muted">Honest advice on what you can spend.</p>
         </div>
         <Card>

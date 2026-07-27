@@ -34,7 +34,7 @@ async def parse(
         # Friendly message the UI maps to the correction flow (§7b).
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            'Frank couldn\'t read that. Try rephrasing, e.g. "lunch 12,50 at Hesburger".',
+            'Frankly couldn\'t read that. Try rephrasing, e.g. "lunch 12,50 at Hesburger".',
         ) from exc
 
     by_lower = {c.name.lower(): c for c in categories}

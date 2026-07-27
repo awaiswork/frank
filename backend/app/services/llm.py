@@ -18,7 +18,7 @@ from anthropic.types import Message, MessageParam, ToolChoiceToolParam, ToolPara
 from app.config import get_settings
 from app.features import AiDisabledError, ai_enabled
 
-logger = logging.getLogger("frank.llm")
+logger = logging.getLogger("frankly.llm")
 
 # Hard caps (§7a) — keep cost bounded.
 PARSER_MAX_TOKENS = 1000
@@ -40,7 +40,7 @@ def get_client() -> AsyncAnthropic:
     """
     if not ai_enabled():
         raise AiDisabledError(
-            "Frank's AI features are switched off (set LLM_ENABLED=true with an "
+            "Frankly's AI features are switched off (set LLM_ENABLED=true with an "
             "ANTHROPIC_API_KEY to enable them)."
         )
     global _client
