@@ -85,43 +85,29 @@ CI runs the same checks on every push (`.github/workflows/ci.yml`).
 
 ## Deployment
 
-Three free services, no card charged: the API on **Koyeb** from `backend/Dockerfile`,
+Three free services, no card required: the API on **Render** from `backend/Dockerfile`,
 Postgres on **Neon**, and the frontend as a static Vite build on **Vercel**. All three
 deploy from `main` on push. Migrations run as part of the container's start command, so
 a deploy can never serve against a stale schema.
 
-Both Koyeb and Neon scale to zero when idle — the free plan sleeps the service after an
-hour without traffic (Koyeb's sub-second "light sleep" is paid-only), so a first visit
-after a quiet spell waits for the instance to wake, the start command to run migrations,
-and Neon to spin up. Expect single-digit seconds, not the 30–60 s a Render free service
-costs. `pool_pre_ping` in `app/db.py` already handles connections dropped while the
-database slept.
-
-Running `alembic upgrade head` on every boot is a deliberate trade: it costs a second or
-two of wake time in exchange for never serving against a stale schema, and the free plan
-gives no separate release step to put it in. If wake time turns out to matter more,
-migrations can move out to a manual step — Neon is reachable directly, so
-`DATABASE_URL=<neon-url> uv run alembic upgrade head` works from any machine.
-
-**Neon** — create a project (pick the region nearest the Koyeb one) and copy the
+**Neon** — create a project in a region near Render's (`frankfurt`) and copy the
 connection string. It arrives as `postgresql://…?sslmode=require`; `app/config.py`
-rewrites the scheme to psycopg3 and preserves the TLS parameters.
+rewrites the scheme to psycopg3 and preserves the TLS parameters. Render's own free
+Postgres expires after a trial period, which is why the database lives here instead.
 
-**Koyeb** — one free web service per organisation, 512 MB / 0.1 vCPU, in Frankfurt or
-Washington D.C. Deploy from GitHub with the Dockerfile builder, work directory
-`backend`, health check HTTP `GET /healthz`.
+**Render** — import `render.yaml` as a Blueprint (New + → Blueprint) rather than
+clicking through the dashboard; it declares the Docker build, the `/healthz` health
+check, and every environment variable. Render prompts for the two it can't know:
 
 | Variable | Value |
 |---|---|
 | `DATABASE_URL` | the Neon connection string, verbatim |
-| `ENV` | `prod` |
-| `SECRET_KEY` | `openssl rand -hex 32` — the app refuses to boot in prod on the dev default |
-| `FRONTEND_ORIGIN` | `https://frankly.app,https://www.frankly.app` (comma-separated) |
-| `COOKIE_SAMESITE` | `lax` on a shared domain; `none` while on `*.vercel.app` + `*.koyeb.app` |
-| `LLM_ENABLED` | `false` |
+| `FRONTEND_ORIGIN` | the Vercel URL; comma-separated for several |
 
-`ANTHROPIC_API_KEY` stays unset. Both it and `LLM_ENABLED` are required before anything
-can bill, so an unset key is a second lock (`app/features.py`).
+The rest are set by the Blueprint: `ENV=prod`, a generated `SECRET_KEY`,
+`LLM_ENABLED=false`, and `COOKIE_SAMESITE=none`. `ANTHROPIC_API_KEY` stays unset — both
+it and `LLM_ENABLED` are required before anything can bill, so an absent key is a second
+lock (`app/features.py`).
 
 **Vercel** — root directory `frontend`, framework Vite, `VITE_API_URL` pointing at the
 API. Vite inlines that at build time, so changing it needs a redeploy, not a restart.
@@ -130,12 +116,25 @@ a refresh.
 
 **Why `COOKIE_SAMESITE` exists:** the refresh token is an httpOnly cookie. A browser
 only sends a `SameSite=Lax` cookie on same-site requests — `frankly.app` and
-`api.frankly.app` qualify, but `*.vercel.app` and `*.koyeb.app` are different sites, so
-on platform subdomains the cookie is silently dropped and every reload logs the user
+`api.frankly.app` qualify, but `*.vercel.app` and `*.onrender.com` are different sites,
+so on platform subdomains the cookie is silently dropped and every reload logs the user
 out. Set `none` until a custom domain is attached, then move it back to `lax`.
 
-**Demo account** — run once after the first deploy, from the Koyeb console (or against
-the Neon URL from your machine, since Neon is reachable directly):
+**Cold starts.** A free Render service sleeps after 15 minutes idle and takes 30–60 s to
+wake — long enough that a visitor gives up. `.github/workflows/keep-warm.yml` pings
+`/healthz` every 10 minutes to prevent it; set the `API_URL` repository variable to
+switch it on. Staying awake ~744 h/month fits inside Render's 750 free instance-hours,
+with little room for a second free service. Neon sleeps too, but wakes in well under a
+second, and `pool_pre_ping` in `app/db.py` handles connections dropped while it slept.
+
+Running `alembic upgrade head` on every boot is a deliberate trade: it costs a second or
+two of start-up in exchange for never serving against a stale schema, and free plans
+give no separate release step to put it in. Neon is reachable directly, so migrations
+can move to a manual step if that ever matters —
+`DATABASE_URL=<neon-url> uv run alembic upgrade head` works from any machine.
+
+**Demo account** — run once after the first deploy, from Render's shell (or against the
+Neon URL from your machine, since Neon is reachable directly):
 
 ```sh
 uv run --no-dev python -m app.seed_demo

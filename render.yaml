@@ -1,0 +1,43 @@
+# Render Blueprint — declares the API service so setup is reproducible rather
+# than a dashboard click-path. Import it from the Render dashboard ("New +" →
+# "Blueprint") and point it at this repo.
+#
+# The database is NOT declared here: Render's free Postgres expires, so Postgres
+# lives on Neon (free permanently). Paste its connection string into DATABASE_URL
+# when Render prompts for it.
+services:
+  - type: web
+    name: frankly-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    # Context is backend/ because the Dockerfile copies pyproject.toml and uv.lock
+    # from its own directory, the same as `docker build backend/` locally.
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: ENV
+        value: prod
+      # Render generates a 256-bit secret; the app refuses to boot in prod on the
+      # dev default, so this must be a real value.
+      - key: SECRET_KEY
+        generateValue: true
+      # The billable AI features stay off in production. Both this and a real
+      # ANTHROPIC_API_KEY are required before anything can call a model, and the
+      # key is deliberately absent — see backend/app/features.py.
+      # Quoted: unquoted `false` is a YAML boolean, and env vars are strings.
+      - key: LLM_ENABLED
+        value: "false"
+      # *.onrender.com and *.vercel.app are different sites, so the refresh
+      # cookie needs SameSite=None or the browser drops it and every reload
+      # signs the user out. Switch to "lax" once a custom domain makes the app
+      # and API same-site.
+      - key: COOKIE_SAMESITE
+        value: none
+      # Prompted on first deploy: the Neon connection string.
+      - key: DATABASE_URL
+        sync: false
+      # Prompted on first deploy: the Vercel URL(s), comma-separated.
+      - key: FRONTEND_ORIGIN
+        sync: false

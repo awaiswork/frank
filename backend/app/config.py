@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 30
     refresh_cookie_name: str = "frankly_refresh"
     # "lax" when the app and API share a registrable domain (frankly.app +
-    # api.frankly.app). Cross-site hosts (*.vercel.app → *.koyeb.app) need
+    # api.frankly.app). Cross-site hosts (*.vercel.app → *.onrender.com) need
     # "none", or the browser drops the refresh cookie and every reload signs the
     # user out.
     cookie_samesite: Literal["lax", "none"] = "lax"

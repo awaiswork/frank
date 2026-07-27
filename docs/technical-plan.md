@@ -85,8 +85,8 @@ frank/
 | Testing | pytest + httpx (BE), Vitest + React Testing Library (FE) | |
 | Lint/format | ruff + mypy (BE), eslint + prettier + `tsc --noEmit` (FE) | |
 | CI | GitHub Actions | Lint, typecheck, test, build on every push |
-| Hosting | API on **Koyeb** (Dockerfile), Postgres on **Neon**, frontend on **Vercel** | Railway was the original pick but dropped its free tier; this trio is free with no card charged. Both API and DB scale to zero, so a cold visit waits a few seconds. RDS/containers remain the upgrade path to mention in the README |
-| Containerization | Dockerfile for the API + docker-compose for local dev | Demonstrates container fluency; the same image runs locally and on Koyeb, so the host stays swappable |
+| Hosting | API on **Render** (Dockerfile, `render.yaml` Blueprint), Postgres on **Neon**, frontend on **Vercel** | Railway was the original pick but dropped its free tier; Koyeb replaced it, then closed free signups after being acquired by Mistral (Feb 2026). This trio is free and needs no card. Render sleeps when idle, so a keep-warm cron pings `/healthz`. RDS/containers remain the upgrade path to mention in the README |
+| Containerization | Dockerfile for the API + docker-compose for local dev | Demonstrates container fluency; the same image runs locally and on Render — the host has already been swapped twice, which is the point |
 
 ## 5. Database schema (PostgreSQL)
 
@@ -204,8 +204,8 @@ API key server-side only; bcrypt password hashing; JWT signed with `SECRET_KEY` 
 
 - Env vars: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `SECRET_KEY`, `FRONTEND_ORIGIN`, `ENV`. Local dev: `docker-compose up` (postgres) + `uvicorn --reload` + `vite dev`; `.env` files git-ignored, `.env.example` committed.
 - Migrations: `alembic upgrade head` runs from the container's start command, before uvicorn — a free-tier host gives no separate release step, and this way a deploy can never serve against a stale schema.
-- **Koyeb:** API built from `backend/Dockerfile`, work directory `backend`, health check `GET /healthz`, env vars in the dashboard. **Neon:** Postgres; its `postgresql://…?sslmode=require` URL is rewritten to psycopg3 in `app/config.py`. **Vercel:** frontend, `VITE_API_URL` pointing at the API. `COOKIE_SAMESITE=none` until a custom domain makes app and API same-site, then `lax` — see README.
-- CI (GitHub Actions): on push → ruff + mypy + pytest (with services: postgres) for backend; eslint + tsc + vitest + `vite build` for frontend. Merge to `main` deploys (Koyeb/Vercel git integration).
+- **Render:** API built from `backend/Dockerfile` via the `render.yaml` Blueprint, health check `GET /healthz`; free services sleep after 15 min, so `.github/workflows/keep-warm.yml` pings them. **Neon:** Postgres; its `postgresql://…?sslmode=require` URL is rewritten to psycopg3 in `app/config.py`. **Vercel:** frontend, `VITE_API_URL` pointing at the API. `COOKIE_SAMESITE=none` until a custom domain makes app and API same-site, then `lax` — see README.
+- CI (GitHub Actions): on push → ruff + mypy + pytest (with services: postgres) for backend; eslint + tsc + vitest + `vite build` for frontend. Merge to `main` deploys (Render/Vercel git integration).
 - Observability v1: structured JSON logs + request IDs + per-call LLM token/cost log lines. A `/healthz` endpoint used as the platform health check.
 
 ## 13. Build order (milestones — finish each before starting the next)
@@ -215,7 +215,7 @@ API key server-side only; bcrypt password hashing; JWT signed with `SECRET_KEY` 
 3. **M2 — Core UI (2–3 days):** design tokens, Home, Transactions, Budgets, Goals pages against real API; aggregate queries §6 wired to Home/Budgets.
 4. **M3 — NL capture (1–2 days):** parser service + endpoint + draft-card flow with confirm/correct; mocked tests; the parsing loading moment per design.
 5. **M4 — Advisor (2 days):** context builder, streaming endpoint, verdict card ×4, history + user_followed.
-6. **M5 — Polish + deploy (1–2 days):** empty/error states, dark mode, rate limits, deploy to Koyeb+Neon+Vercel, seed a demo account.
+6. **M5 — Polish + deploy (1–2 days):** empty/error states, dark mode, rate limits, deploy to Render+Neon+Vercel, seed a demo account.
 7. **M6 — Portfolio assets (½ day):** README with architecture diagram + the §6 queries highlighted, 60-second demo GIF of NL capture and a verdict, LinkedIn post.
 
 **Definition of done (v1):** a stranger can register, log "spent 12.50 lunch at Hesburger" in natural language, confirm the draft, watch the Groceries budget move, ask "should I buy 240€ headphones?", and receive a streamed verdict grounded in their own numbers — on a public URL, with CI green.
