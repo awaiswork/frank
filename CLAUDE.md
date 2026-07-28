@@ -45,6 +45,8 @@ scheme managed providers hand out — which is why each move cost only documenta
 - **The daily note must never claim what it can't know.** With no `monthly_income_cents` on file there is no meaningful safe-to-spend, so `SafeToSpend.income_known` gates it and the mood becomes `'unknown'` rather than a verdict. Any new surface reading `safe_to_spend_cents` must check `income_known` first. Fabricated financial reassurance is the worst failure this product can have.
 - **One mood source.** The mood chip and `AmbientField` both read the server mood from `useDailyNote()`. A second client-side computation existed once and drifted from it on screen. Don't add another.
 - **Never remove a logging path without replacing it.** `Capture` was once the only way to create a transaction, which is why turning the AI off required `ManualCapture`. Logging spend by hand must work with every AI feature disabled.
+- **Overlays render through `Portal`, never inline.** An element holding a transform becomes the containing block for `position: fixed`, and every page root animates one. A sheet left inside a page centres on that page's column and gets clipped by its height — wrong on screen, silent everywhere else. `Portal` (`components/ui.tsx`) puts overlays on `<body>`; `useModal` (`lib/useModal.ts`) carries the scroll lock, Escape, and the `inert` focus trap that makes `aria-modal="true"` true rather than merely claimed. For the same reason, a keyframe that ends where the element already is uses `backwards`, not `forwards`/`both` — `animate-stamp` is the one that genuinely needs `both`.
+- **One capture sheet, owned by `Layout`.** Screens open it with `useCapture()`. When pages mounted their own `<QuickAdd>`, ⌘K opened Layout's on top of it — two backdrops, two dialogs, and a stale form left behind after saving.
 
 ## Migrations
 
@@ -58,6 +60,7 @@ scheme managed providers hand out — which is why each move cost only documenta
 - `tests/conftest.py` has an autouse fixture that forces `LLM_ENABLED=false` **and** `RATE_LIMIT_ENABLED=false`. Any test that drives a model must request the `ai_on` fixture; anything asserting on throttling must re-enable it explicitly (see `tests/test_deploy_config.py`).
 - Tests run inside a rolled-back outer transaction, so they never see each other's data. Don't add manual cleanup.
 - Deployment-critical config (driver rewrite, cookie policy, CORS list, fail-fast guards) is covered by `tests/test_deploy_config.py`. Extend it rather than trusting a manual check.
+- Frontend component tests opt into jsdom per file with a `// @vitest-environment jsdom` docblock, so the pure `lib/` tests keep running on node. Vitest runs without globals here, which means testing-library never registers its automatic cleanup — call `cleanup()` in `afterEach` yourself or each test will query the previous test's DOM.
 
 ## Cost / free-tier awareness
 
