@@ -52,7 +52,7 @@ export async function askAdvisor(
       },
       body: JSON.stringify(body),
     });
-    if (res.status === 401 && allowRetry && (await refreshAccessToken())) {
+    if (res.status === 401 && allowRetry && (await refreshAccessToken()).ok) {
       return send(false);
     }
     return res;

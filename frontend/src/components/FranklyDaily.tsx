@@ -1,7 +1,7 @@
 import { useDailyNote } from '../api/hooks';
 import type { DayMood } from '../api/types';
 import { moodColor, moodLabel } from '../lib/mood';
-import { BreathingDot } from './bits';
+import { BreathingDot, RetryLine } from './bits';
 import { Card } from './ui';
 
 function greeting(): string {
@@ -28,7 +28,10 @@ export function FranklyDaily() {
   });
 
   const d = daily.data;
-  const mood: DayMood = d?.mood ?? 'go';
+  // 'unknown' until the server tells us, never 'go' — a cheerful chip over a note
+  // that failed to load is a verdict we haven't earned, and it disagreed on screen
+  // with AmbientField, which reads this same query and already defaults to unknown.
+  const mood: DayMood = d?.mood ?? 'unknown';
   const color = moodColor(mood);
 
   return (
@@ -76,6 +79,13 @@ export function FranklyDaily() {
             </p>
             <p className="mt-2.5 font-display text-[12.5px] font-bold text-muted">— frankly</p>
           </>
+        ) : daily.isError ? (
+          // Say we couldn't read the numbers, rather than implying there were
+          // none to read. The note must never claim what it can't know.
+          <RetryLine
+            message="Couldn't reach the server to read today's numbers."
+            onRetry={() => void daily.refetch()}
+          />
         ) : (
           <p className="text-[15px] text-muted">
             Today's note is taking a moment — log something and check back.

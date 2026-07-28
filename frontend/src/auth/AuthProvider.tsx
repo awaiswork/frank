@@ -1,6 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { apiFetch, json, refreshAccessToken, setAccessToken } from '../api/client';
+import {
+  BOOTSTRAP_TIMEOUT_MS,
+  apiFetch,
+  failureReason,
+  json,
+  refreshAccessToken,
+  setAccessToken,
+} from '../api/client';
 import type { TokenOut, User } from '../api/types';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 
@@ -8,6 +15,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUserState] = useState<User | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   const loadUser = useCallback(async () => {
     const me = await apiFetch<User>('/me');
@@ -15,25 +23,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authed');
   }, []);
 
-  // On boot, try to restore a session from the refresh cookie. Any failure
-  // (no session, or the API being unreachable) resolves to 'anon' so the app
-  // always reaches the login screen instead of hanging on "Loading…".
+  /** Drop every trace of a session we no longer have. */
+  const forget = useCallback(() => {
+    setAccessToken(null);
+    setUserState(null);
+  }, []);
+
+  // On boot, restore a session from the refresh cookie. Every outcome lands on a
+  // terminal status — success, 401, 5xx, network error and timeout alike — so
+  // there is no path that leaves this on 'loading'. The one that used to escape
+  // was a request that never came back at all: with no deadline on the fetch,
+  // nothing threw, nothing resolved, and no amount of try/catch/finally here
+  // could have noticed. The deadline lives in `api/client`; this just classifies.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      const restored = await refreshAccessToken(BOOTSTRAP_TIMEOUT_MS);
+      if (cancelled) return;
+      if (!restored.ok) {
+        forget();
+        setStatus(restored.reason === 'unauthenticated' ? 'anon' : 'unreachable');
+        return;
+      }
       try {
-        const ok = await refreshAccessToken();
+        const me = await apiFetch<User>('/me', {}, BOOTSTRAP_TIMEOUT_MS);
         if (cancelled) return;
-        if (ok) await loadUser();
-        else setStatus('anon');
-      } catch {
-        if (!cancelled) setStatus('anon');
+        setUserState(me);
+        setStatus('authed');
+      } catch (err) {
+        if (cancelled) return;
+        forget();
+        setStatus(failureReason(err) === 'unauthenticated' ? 'anon' : 'unreachable');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadUser]);
+  }, [attempt, forget]);
 
   const authenticate = useCallback(
     async (path: '/auth/login' | '/auth/register', email: string, password: string) => {
@@ -50,6 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadUser, queryClient],
   );
 
+  // Back to 'loading' here rather than in the effect: a retry is an event, so the
+  // status change belongs with it instead of as a re-render the effect triggers.
+  const retry = useCallback(() => {
+    setStatus('loading');
+    setAttempt((n) => n + 1);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       status,
@@ -63,8 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         queryClient.clear();
       },
       setUser: setUserState,
+      retry,
     }),
-    [status, user, authenticate, queryClient],
+    [status, user, authenticate, queryClient, retry],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

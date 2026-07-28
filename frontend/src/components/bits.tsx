@@ -48,6 +48,26 @@ export function FranklyCallout({
   );
 }
 
+/**
+ * A failed panel, with a way out. Requests carry a deadline now, so a sleeping
+ * API surfaces here as an error rather than a spinner that never stops — which
+ * only helps if there's something to press.
+ */
+export function RetryLine({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-muted">
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="font-semibold text-ink-2 underline underline-offset-2 hover:text-ink"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 /** Soft breathing status dot. */
 export function BreathingDot({ color = 'var(--go)' }: { color?: string }) {
   return (

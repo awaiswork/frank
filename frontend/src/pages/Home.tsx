@@ -5,7 +5,7 @@ import { BudgetBar } from '../components/BudgetBar';
 import { Capture } from '../components/Capture';
 import { CategoryAvatar } from '../components/CategoryAvatar';
 import { FranklyDaily } from '../components/FranklyDaily';
-import { AiBadge } from '../components/bits';
+import { AiBadge, RetryLine } from '../components/bits';
 import { Money } from '../components/Money';
 import { Card, EmptyState } from '../components/ui';
 import { categoryColor } from '../lib/categoryColor';
@@ -78,8 +78,15 @@ export function Home() {
             </div>
             <MonthPulse elapsedPct={elapsedPct} daysInMonth={daysInMonth} monthName={monthName} />
           </>
+        ) : insights.isError ? (
+          <div className="mt-3">
+            <RetryLine
+              message="Couldn't reach the server."
+              onRetry={() => void insights.refetch()}
+            />
+          </div>
         ) : (
-          <p className="mt-3 text-muted">{insights.isError ? 'Could not load.' : 'Loading…'}</p>
+          <p className="mt-3 text-muted">Loading…</p>
         )}
       </Card>
 
