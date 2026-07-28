@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useCategories, useDeleteTransaction, useTransactions } from '../api/hooks';
 import type { Category, Transaction } from '../api/types';
+import { useCapture } from '../capture/useCapture';
 import { CategoryAvatar } from '../components/CategoryAvatar';
-import { QuickAdd } from '../components/QuickAdd';
 import { AiBadge } from '../components/bits';
 import { Money } from '../components/Money';
 import { Card } from '../components/ui';
@@ -24,7 +24,7 @@ function dayHeading(iso: string): string {
 
 export function Transactions() {
   const [month, setMonth] = useState(currentMonth());
-  const [adding, setAdding] = useState(false);
+  const capture = useCapture();
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const categories = useCategories();
@@ -118,7 +118,7 @@ export function Transactions() {
           </div>
           {!q && !categoryId && (
             <button
-              onClick={() => setAdding(true)}
+              onClick={capture.open}
               className="mt-5 inline-flex h-11 items-center justify-center rounded-input bg-ink px-5 text-[14.5px] font-semibold text-paper hover:opacity-90"
             >
               Log your first one
@@ -156,8 +156,6 @@ export function Transactions() {
           })}
         </div>
       )}
-
-      <QuickAdd open={adding} onClose={() => setAdding(false)} />
     </section>
   );
 }

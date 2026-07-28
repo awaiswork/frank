@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
+import { CaptureContext } from '../capture/CaptureContext';
 import { AmbientField } from './AmbientField';
 import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
@@ -149,6 +150,9 @@ export function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const advisorSoon = ready && !features.advisor;
 
+  // The one handle screens get on the capture sheet, so there is only ever one.
+  const capture = useMemo(() => ({ open: () => setAdding(true) }), []);
+
   // Logging is the thing people open Frankly to do, so it gets a global shortcut:
   // "a" for add (ignored while typing, so it never eats a keystroke) and ⌘/Ctrl-K.
   useEffect(() => {
@@ -219,7 +223,7 @@ export function Layout() {
   const wordmark = <Wordmark />;
 
   return (
-    <>
+    <CaptureContext.Provider value={capture}>
       <AmbientField />
       <div className="relative z-10 min-h-svh">
         {/* Mobile top bar — the sidebar's identity + theme, without its footprint */}
@@ -351,7 +355,7 @@ export function Layout() {
       )}
 
       <QuickAdd open={adding} onClose={() => setAdding(false)} />
-    </>
+    </CaptureContext.Provider>
   );
 }
 
