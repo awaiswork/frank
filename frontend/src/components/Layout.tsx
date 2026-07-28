@@ -154,6 +154,17 @@ export function Layout() {
   // The one handle screens get on the capture sheet, so there is only ever one.
   const capture = useMemo(() => ({ open: () => setAdding(true) }), []);
 
+  // MoreSheet is reachable only from the mobile tab bar and hides itself at lg.
+  // Widening the window past that would leave it mounted but display:none —
+  // invisible, while still holding the page inert. Close it at the breakpoint.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => mq.matches && setMoreOpen(false);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
   // Logging is the thing people open Frankly to do, so it gets a global shortcut:
   // "a" for add (ignored while typing, so it never eats a keystroke) and ⌘/Ctrl-K.
   useEffect(() => {
