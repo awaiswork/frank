@@ -30,9 +30,9 @@ export function Budgets() {
 
   return (
     <section className="animate-fade-up mx-auto flex max-w-[720px] flex-col gap-5">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="font-display text-[22px] font-semibold tracking-[-0.02em]">Budgets</h1>
             <MonthSwitcher month={month} onChange={setMonth} />
           </div>
@@ -40,8 +40,12 @@ export function Budgets() {
             The mark shows today's pace. Past it means you're spending ahead of the month.
           </p>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="num text-[20px] font-semibold whitespace-nowrap">
+        {/* Was `shrink-0` with a `nowrap` total — an explicit refusal to shrink
+            wrapped around two figures that can't break internally, which set a
+            520px floor on the whole page. Each amount is still atomic; the pair
+            is now allowed to break between them. */}
+        <div className="min-w-0 text-right">
+          <div className="num text-[20px] font-semibold">
             {formatMoney(totalSpent).replace(' €', '')}{' '}
             <span className="text-[15px] text-muted">/ {formatMoney(totalLimit)}</span>
           </div>

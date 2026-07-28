@@ -52,18 +52,30 @@ export function Home() {
           <NeedsIncome spentCents={safe.spent_cents} monthName={monthName} />
         ) : parts ? (
           <>
-            <div className="num mt-2 flex items-start gap-0.5 leading-[0.9]">
+            {/* One font-size drives the figure; the other two are `em` of it, so
+                the design's 56/28/24 and 84/38/32 ratios survive at any size.
+                It scales against the *card* (`cqi`), not the window, because the
+                same hero has to work in a full-width card and a narrow column —
+                and it caps at the redlined sizes, so 375px and up look exactly
+                as designed. Money can never wrap (`lib/money.ts` groups with
+                U+202F, a no-break space), so `truncate` is the backstop: past
+                roughly a million the figure clips instead of widening the page,
+                with the full value on the row's title. */}
+            <div
+              title={`${parts.negative ? '−' : ''}${parts.euros},${parts.cents} €`}
+              className="num mt-2 flex min-w-0 items-start gap-0.5 leading-[0.9] text-[clamp(2rem,19.5cqi,3.5rem)] sm:text-[clamp(2.5rem,16cqi,5.25rem)]"
+            >
               <span
-                className="text-[56px] font-semibold tracking-[-0.03em] sm:text-[84px]"
+                className="min-w-0 truncate font-semibold tracking-[-0.03em]"
                 style={{ color: parts.negative ? 'var(--over)' : 'var(--ink)' }}
               >
                 {parts.negative ? '−' : ''}
                 {parts.euros}
               </span>
-              <span className="mt-1.5 text-[28px] font-semibold text-ink-2 sm:text-[38px]">
+              <span className="mt-1.5 shrink-0 text-[0.5em] font-semibold text-ink-2 sm:text-[0.4524em]">
                 ,{parts.cents}
               </span>
-              <span className="mt-[7px] ml-1.5 text-[24px] font-medium text-muted sm:mt-[9px] sm:text-[32px]">
+              <span className="mt-[7px] ml-1.5 shrink-0 text-[0.4286em] font-medium text-muted sm:mt-[9px] sm:text-[0.381em]">
                 €
               </span>
             </div>
@@ -92,8 +104,11 @@ export function Home() {
 
       <Capture />
 
-      {/* Recent + Budgets glance */}
-      <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[1.15fr_1fr]">
+      {/* Recent + Budgets glance. `minmax(0, …)` rather than a bare `1.15fr`:
+          an `fr` track floors at min-content, so the longest merchant name in
+          the list would set the column's width and push the page wider. The
+          ratio is unchanged — the tracks just gained permission to shrink. */}
+      <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <Card className="p-0">
           <div className="flex items-center justify-between px-[22px] pt-5 pb-1">
             <h2 className="text-[15px] font-semibold text-ink">Recent</h2>
@@ -115,7 +130,9 @@ export function Home() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-[7px] text-[14.5px] font-semibold text-ink">
-                        <span className="truncate">{label}</span>
+                        <span className="truncate" title={label}>
+                          {label}
+                        </span>
                         {t.source === 'nl_parse' && <AiBadge />}
                       </div>
                       <div className="text-[12.5px] text-muted">
@@ -185,14 +202,18 @@ function NeedsIncome({ spentCents, monthName }: { spentCents: number; monthName:
   const parts = moneyParts(useCountUp(spentCents));
   return (
     <>
-      <div className="num mt-2 flex items-start gap-0.5 leading-[0.9]">
-        <span className="text-[56px] font-semibold tracking-[-0.03em] text-ink sm:text-[84px]">
+      {/* Same fluid hero as the safe-to-spend figure above — see the note there. */}
+      <div
+        title={`${parts.euros},${parts.cents} €`}
+        className="num mt-2 flex min-w-0 items-start gap-0.5 leading-[0.9] text-[clamp(2rem,19.5cqi,3.5rem)] sm:text-[clamp(2.5rem,16cqi,5.25rem)]"
+      >
+        <span className="min-w-0 truncate font-semibold tracking-[-0.03em] text-ink">
           {parts.euros}
         </span>
-        <span className="mt-1.5 text-[28px] font-semibold text-ink-2 sm:text-[38px]">
+        <span className="mt-1.5 shrink-0 text-[0.5em] font-semibold text-ink-2 sm:text-[0.4524em]">
           ,{parts.cents}
         </span>
-        <span className="mt-[7px] ml-1.5 text-[24px] font-medium text-muted sm:mt-[9px] sm:text-[32px]">
+        <span className="mt-[7px] ml-1.5 shrink-0 text-[0.4286em] font-medium text-muted sm:mt-[9px] sm:text-[0.381em]">
           €
         </span>
       </div>

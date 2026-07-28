@@ -15,6 +15,18 @@ export function Portal({ children }: { children: ReactNode }) {
   return createPortal(children, document.body);
 }
 
+/**
+ * The surface everything sits on — and a **container query context**, so what's
+ * inside can size itself against this card rather than the viewport. A card in
+ * Home's narrow right-hand column and the same card full-width on Transactions
+ * are different amounts of room; `cqi` units let one component answer both
+ * without a media query that can only ever see the window.
+ *
+ * `container-type: inline-size` also applies `contain: layout`, which would make
+ * this a containing block for any `position: fixed` descendant. That is safe
+ * here only because every overlay already escapes to <body> through `Portal` —
+ * see its note above. Keep it that way.
+ */
 export function Card({
   children,
   className = '',
@@ -26,7 +38,7 @@ export function Card({
 }) {
   return (
     <div
-      className={`rounded-card border border-line bg-surface p-5 ${className}`}
+      className={`@container rounded-card border border-line bg-surface p-5 ${className}`}
       style={{ boxShadow: 'var(--shadow)', ...style }}
     >
       {children}

@@ -106,22 +106,23 @@ export function Insight() {
                   />
                 ))}
               </svg>
-              <div className="flex min-w-[200px] flex-1 flex-col gap-[11px]">
+              {/* `basis-[200px]` rather than `min-w-[200px]`: the legend still
+                  wraps below the donut at the same point, but it no longer
+                  carries a 200px floor it can never go under. */}
+              <div className="flex min-w-0 flex-1 basis-[200px] flex-col gap-[11px]">
                 {spend.map((s) => (
                   <div key={s.category_id ?? 'unc'} className="flex items-center gap-2.5">
                     <span
                       className="h-[9px] w-[9px] shrink-0 rounded-full"
                       style={{ background: categoryColor(s.category_name) }}
                     />
-                    <span className="flex-1 text-[13.5px] text-ink-2">
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink-2">
                       {s.category_name ?? 'Uncategorised'}
                     </span>
-                    <span className="num text-[13.5px] text-muted">
+                    <span className="num shrink-0 text-[13.5px] text-muted">
                       {Math.round((s.spent_cents / thisTotal) * 100)}%
                     </span>
-                    <span className="num w-[72px] text-right text-[13.5px] font-bold whitespace-nowrap">
-                      {formatMoney(s.spent_cents)}
-                    </span>
+                    <Amount value={formatMoney(s.spent_cents)} />
                   </div>
                 ))}
               </div>
@@ -137,7 +138,7 @@ export function Insight() {
                   const up = m.delta_cents > 0;
                   return (
                     <div key={m.category_id ?? 'unc'} className="flex items-center gap-3.5">
-                      <span className="w-24 shrink-0 text-[13.5px]">
+                      <span className="w-24 shrink-0 truncate text-[13.5px]">
                         {m.category_name ?? 'Uncategorised'}
                       </span>
                       <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-inset">
@@ -149,12 +150,10 @@ export function Insight() {
                           }}
                         />
                       </div>
-                      <span
-                        className="num w-[72px] text-right text-[13.5px] font-bold whitespace-nowrap"
-                        style={{ color: up ? 'var(--over)' : 'var(--go)' }}
-                      >
-                        {formatMoney(m.delta_cents, { signed: true })}
-                      </span>
+                      <Amount
+                        value={formatMoney(m.delta_cents, { signed: true })}
+                        color={up ? 'var(--over)' : 'var(--go)'}
+                      />
                     </div>
                   );
                 })}
@@ -176,4 +175,26 @@ export function Insight() {
 
 function Num({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <span className={`num font-bold ${className}`}>{children}</span>;
+}
+
+/**
+ * The right-hand figure in a legend or mover row.
+ *
+ * This used to be `w-[72px]` with `whitespace-nowrap` — a box fixed at 72px
+ * around content that cannot break, so anything longer simply painted outside
+ * it and grew the document while the box itself still measured 72px. (That's
+ * why the overflow had no visible culprit.) Now 72px is the *floor*: the column
+ * still lines up at ordinary amounts, and an unusually large one truncates with
+ * the full value on the title rather than setting the width of the page.
+ */
+function Amount({ value, color }: { value: string; color?: string }) {
+  return (
+    <span
+      title={value}
+      style={color ? { color } : undefined}
+      className="num min-w-[72px] shrink truncate text-right text-[13.5px] font-bold"
+    >
+      {value}
+    </span>
+  );
 }

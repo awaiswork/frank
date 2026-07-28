@@ -54,8 +54,10 @@ export function Transactions() {
 
   return (
     <section className="animate-fade-up mx-auto flex max-w-[760px] flex-col gap-[18px]">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Header. Wraps rather than insisting both halves share a line: the month
+          nav can't shrink (arrows plus a nowrap label), so below ~430px the
+          search box drops to its own row instead of pushing the page sideways. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="flex items-center gap-3">
           <button
             aria-label="Previous month"
@@ -75,7 +77,7 @@ export function Transactions() {
             ›
           </button>
         </div>
-        <div className="flex w-full max-w-[230px] items-center gap-2.5 rounded-[11px] border border-line-2 bg-surface px-3 py-2">
+        <div className="flex min-w-0 flex-1 basis-[200px] items-center gap-2.5 rounded-[11px] border border-line-2 bg-surface px-3 py-2 sm:max-w-[230px] sm:flex-none">
           <svg
             width="16"
             height="16"
@@ -188,7 +190,12 @@ function Row({ tx, category }: { tx: Transaction; category: Category | null }) {
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-[7px] text-[14.5px] font-semibold text-ink">
-          <span className="truncate">{label}</span>
+          {/* Truncates rather than widening the row — so the full name has to
+              stay reachable. Merchant names are arbitrary user text and are the
+              one thing here with no upper bound on length. */}
+          <span className="truncate" title={label}>
+            {label}
+          </span>
           {tx.source === 'nl_parse' && <AiBadge />}
         </div>
         <div className="truncate text-[12.5px] text-muted">{category?.name ?? 'Uncategorised'}</div>

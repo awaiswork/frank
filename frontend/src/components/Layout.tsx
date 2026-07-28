@@ -244,7 +244,7 @@ export function Layout() {
           <button
             onClick={toggleTheme}
             aria-label="Toggle light and dark"
-            className="grid h-10 w-10 place-items-center rounded-[10px] border border-line bg-surface text-ink-2"
+            className="grid h-11 w-11 place-items-center rounded-[10px] border border-line bg-surface text-ink-2"
           >
             {themeIcon}
           </button>
@@ -317,8 +317,14 @@ export function Layout() {
             </div>
           </aside>
 
-          {/* Main. Bottom padding clears the mobile tab bar. */}
-          <main className="min-h-svh px-4 pt-6 pb-32 sm:px-6 lg:px-11 lg:pt-10 lg:pb-20">
+          {/* Main. Bottom padding clears the mobile tab bar.
+              `min-w-0` is load-bearing: this is a grid item, and a grid item's
+              default `min-width: auto` refuses to shrink below its content's
+              min-content width. One unbreakable string anywhere on a page — a
+              long merchant name, a nine-figure amount — would otherwise widen
+              this track, then the grid, then the document, and the whole app
+              would scroll sideways from `lg` up. */}
+          <main className="min-h-svh min-w-0 px-4 pt-6 pb-32 sm:px-6 lg:px-11 lg:pt-10 lg:pb-20">
             <Outlet />
           </main>
         </div>
