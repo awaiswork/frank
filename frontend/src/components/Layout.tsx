@@ -3,6 +3,7 @@ import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
 import { CaptureContext } from '../capture/CaptureContext';
+import { useModal } from '../lib/useModal';
 import { AmbientField } from './AmbientField';
 import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
@@ -417,9 +418,15 @@ function MoreSheet({
     ['/insights', 'Insight', 'insight'],
     ['/settings', 'Settings', 'settings'],
   ];
+  const overlayRef = useModal(onClose);
   return (
     <Portal>
-      <div className="fixed inset-0 z-40 flex items-end lg:hidden" role="dialog" aria-modal="true">
+      <div
+        ref={overlayRef}
+        className="fixed inset-0 z-40 flex items-end focus:outline-none lg:hidden"
+        role="dialog"
+        aria-modal="true"
+      >
         <button
           type="button"
           aria-label="Close"

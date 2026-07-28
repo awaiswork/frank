@@ -10,6 +10,7 @@ import { categoryColor, categoryTint } from '../lib/categoryColor';
 import { rankCategories } from '../lib/categories';
 import { currentMonth, shiftDays, todayISO } from '../lib/date';
 import { formatMoney, parseAmountToCents } from '../lib/money';
+import { useModal } from '../lib/useModal';
 import { Portal } from './ui';
 
 /** Digits + separator + backspace, laid out as a phone keypad. */
@@ -71,6 +72,7 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
 
   const amountRef = useRef<HTMLInputElement>(null);
   const closeTimer = useRef<number | undefined>(undefined);
+  const overlayRef = useModal(onClose);
 
   const ranked = useMemo(
     () => rankCategories(categories.data ?? [], transactions.data ?? [], kind),
@@ -96,24 +98,6 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
       return () => window.clearTimeout(t);
     }
   }, [coarse]);
-
-  // Esc closes from anywhere inside the sheet.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  // Don't let the page behind scroll under the sheet.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
@@ -177,7 +161,8 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+        ref={overlayRef}
+        className="fixed inset-0 z-50 flex items-end justify-center focus:outline-none sm:items-center sm:p-4"
         role="dialog"
         aria-modal="true"
         aria-label={kind === 'income' ? 'Log income' : 'Log an expense'}
