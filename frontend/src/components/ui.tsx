@@ -1,4 +1,19 @@
+import { createPortal } from 'react-dom';
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
+
+/**
+ * Renders children on <body>, outside the page tree.
+ *
+ * Every overlay must go through this. `position: fixed` is resolved against the
+ * nearest ancestor with a transform, not the viewport — and each page root
+ * carries `animate-fade-up`, whose `both` fill leaves a transform applied for
+ * good. A sheet rendered inside a page therefore centres itself on that page's
+ * column and gets clipped by its height, which is exactly what it looks like.
+ * Escaping to <body> means no ancestor can ever capture it again.
+ */
+export function Portal({ children }: { children: ReactNode }) {
+  return createPortal(children, document.body);
+}
 
 export function Card({
   children,

@@ -5,6 +5,7 @@ import { useAuth } from '../auth/useAuth';
 import { AmbientField } from './AmbientField';
 import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
+import { Portal } from './ui';
 
 type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
 
@@ -413,68 +414,70 @@ function MoreSheet({
     ['/settings', 'Settings', 'settings'],
   ];
   return (
-    <div className="fixed inset-0 z-40 flex items-end lg:hidden" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="animate-fade-in absolute inset-0 cursor-default bg-black/45"
-      />
-      <div className="animate-sheet-in relative w-full rounded-t-[22px] border border-line-2 bg-surface px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
-              This month
+    <Portal>
+      <div className="fixed inset-0 z-40 flex items-end lg:hidden" role="dialog" aria-modal="true">
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className="animate-fade-in absolute inset-0 cursor-default bg-black/45"
+        />
+        <div className="animate-sheet-in relative max-h-[92svh] w-full overflow-y-auto rounded-t-[22px] border border-line-2 bg-surface px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
+                This month
+              </div>
+              <div className="num text-[15px] font-semibold text-ink">
+                {monthName} · {daysLeft} days left
+              </div>
             </div>
-            <div className="num text-[15px] font-semibold text-ink">
-              {monthName} · {daysLeft} days left
-            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="grid h-9 w-9 place-items-center rounded-full text-muted"
+            >
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex flex-col">
+            {items.map(([to, label, icon]) => (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={onClose}
+                className="flex items-center gap-3 border-b border-line py-3.5 text-[15px] font-semibold text-ink last:border-0"
+              >
+                <span className="grid h-[18px] w-[18px] place-items-center text-muted">
+                  <Icon name={icon} />
+                </span>
+                {label}
+                {to === '/advisor' && advisorSoon && (
+                  <span className="ml-auto rounded-full bg-inset px-1.5 py-px text-[9.5px] font-bold tracking-[0.08em] text-faint uppercase">
+                    Soon
+                  </span>
+                )}
+              </NavLink>
+            ))}
           </div>
           <button
-            onClick={onClose}
-            aria-label="Close"
-            className="grid h-9 w-9 place-items-center rounded-full text-muted"
+            onClick={onSignOut}
+            className="mt-3 h-11 w-full rounded-input border border-line-2 text-[14px] font-semibold text-ink-2"
           >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            Sign out
           </button>
         </div>
-        <div className="flex flex-col">
-          {items.map(([to, label, icon]) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onClose}
-              className="flex items-center gap-3 border-b border-line py-3.5 text-[15px] font-semibold text-ink last:border-0"
-            >
-              <span className="grid h-[18px] w-[18px] place-items-center text-muted">
-                <Icon name={icon} />
-              </span>
-              {label}
-              {to === '/advisor' && advisorSoon && (
-                <span className="ml-auto rounded-full bg-inset px-1.5 py-px text-[9.5px] font-bold tracking-[0.08em] text-faint uppercase">
-                  Soon
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </div>
-        <button
-          onClick={onSignOut}
-          className="mt-3 h-11 w-full rounded-input border border-line-2 text-[14px] font-semibold text-ink-2"
-        >
-          Sign out
-        </button>
       </div>
-    </div>
+    </Portal>
   );
 }

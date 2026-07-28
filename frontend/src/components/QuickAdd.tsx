@@ -10,6 +10,7 @@ import { categoryColor, categoryTint } from '../lib/categoryColor';
 import { rankCategories } from '../lib/categories';
 import { currentMonth, shiftDays, todayISO } from '../lib/date';
 import { formatMoney, parseAmountToCents } from '../lib/money';
+import { Portal } from './ui';
 
 /** Digits + separator + backspace, laid out as a phone keypad. */
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'] as const;
@@ -174,206 +175,208 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-label={kind === 'income' ? 'Log income' : 'Log an expense'}
-    >
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="animate-fade-in absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
-      />
-
+    <Portal>
       <div
-        className="animate-sheet-in relative flex max-h-[92svh] w-full flex-col overflow-y-auto rounded-t-[22px] border border-line-2 bg-surface sm:max-w-[440px] sm:rounded-card"
-        style={{ boxShadow: '0 24px 70px rgba(0,0,0,0.42)' }}
+        className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label={kind === 'income' ? 'Log income' : 'Log an expense'}
       >
-        {logged ? (
-          <LoggedFlash logged={logged} onUndo={undo} onAnother={another} onDone={onClose} />
-        ) : (
-          <form onSubmit={submit} className="flex flex-col">
-            {/* Header: what kind of thing is this, and a way out */}
-            <div className="flex items-center justify-between border-b border-line px-4 py-3">
-              <div className="flex rounded-full bg-inset p-1">
-                {(['expense', 'income'] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => {
-                      setKind(k);
-                      setCategoryId(null);
-                    }}
-                    className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold capitalize transition-colors ${
-                      kind === k ? 'bg-surface text-ink' : 'text-muted hover:text-ink-2'
-                    }`}
-                    style={kind === k ? { boxShadow: 'var(--shadow)' } : undefined}
-                  >
-                    {k}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="grid h-9 w-9 place-items-center rounded-full text-muted hover:bg-inset hover:text-ink"
-              >
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                >
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className="animate-fade-in absolute inset-0 cursor-default bg-black/45 backdrop-blur-[2px]"
+        />
 
-            {/* Amount — the first and often only thing they need to touch */}
-            <div className="flex items-center justify-center gap-1.5 px-4 pt-7 pb-5">
-              <span
-                className="num text-[30px] font-medium"
-                style={{ color: amount ? 'var(--muted)' : 'var(--faint)' }}
-              >
-                {kind === 'income' ? '+' : '−'}
-              </span>
-              <input
-                ref={amountRef}
-                value={amount}
-                onChange={(e) => {
-                  setError(null);
-                  setAmount(e.target.value.replace(/[^\d.,]/g, ''));
-                }}
-                readOnly={coarse}
-                inputMode={coarse ? 'none' : 'decimal'}
-                placeholder="0,00"
-                aria-label="Amount"
-                className="num w-full max-w-[240px] bg-transparent text-center text-[52px] font-semibold tracking-[-0.03em] text-ink placeholder:text-faint focus:outline-none"
-              />
-              <span className="num text-[30px] font-medium text-muted">€</span>
-            </div>
-
-            {/* Categories — one tap, most-used first */}
-            <div className="flex flex-wrap gap-2 px-4 pb-4">
-              {visible.map((c) => {
-                const on = categoryId === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setCategoryId(on ? null : c.id)}
-                    className={`flex items-center gap-2 rounded-full border px-3 py-2 text-[13.5px] font-medium transition-colors ${
-                      on ? 'text-ink' : 'border-line-2 text-ink-2 hover:text-ink'
-                    }`}
-                    style={
-                      on
-                        ? {
-                            borderColor: categoryColor(c.name),
-                            background: categoryTint(c.name),
-                          }
-                        : undefined
-                    }
-                  >
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: categoryColor(c.name) }}
-                    />
-                    {c.name}
-                  </button>
-                );
-              })}
-              {!showAllCategories && ranked.length > TOP_CATEGORIES && (
+        <div
+          className="animate-sheet-in relative flex max-h-[92svh] w-full flex-col overflow-y-auto rounded-t-[22px] border border-line-2 bg-surface sm:max-h-[calc(100svh-2rem)] sm:max-w-[440px] sm:rounded-card"
+          style={{ boxShadow: '0 24px 70px rgba(0,0,0,0.42)' }}
+        >
+          {logged ? (
+            <LoggedFlash logged={logged} onUndo={undo} onAnother={another} onDone={onClose} />
+          ) : (
+            <form onSubmit={submit} className="flex flex-col">
+              {/* Header: what kind of thing is this, and a way out */}
+              <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                <div className="flex rounded-full bg-inset p-1">
+                  {(['expense', 'income'] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => {
+                        setKind(k);
+                        setCategoryId(null);
+                      }}
+                      className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold capitalize transition-colors ${
+                        kind === k ? 'bg-surface text-ink' : 'text-muted hover:text-ink-2'
+                      }`}
+                      style={kind === k ? { boxShadow: 'var(--shadow)' } : undefined}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowAllCategories(true)}
-                  className="rounded-full border border-dashed border-line-2 px-3 py-2 text-[13.5px] font-medium text-muted hover:text-ink"
+                  onClick={onClose}
+                  aria-label="Close"
+                  className="grid h-9 w-9 place-items-center rounded-full text-muted hover:bg-inset hover:text-ink"
                 >
-                  more…
+                  <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  >
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
                 </button>
-              )}
-            </div>
+              </div>
 
-            {/* Optional detail */}
-            <div className="flex flex-col gap-2.5 px-4 pb-4">
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={500}
-                placeholder="What was it? (optional)"
-                aria-label="Description"
-                className="h-11 rounded-input border border-line-2 bg-field px-3 text-[15px] text-ink placeholder:text-faint focus:outline-none"
-              />
-              <div className="flex items-center gap-2">
-                {(
-                  [
-                    ['Today', todayISO()],
-                    ['Yesterday', shiftDays(todayISO(), -1)],
-                  ] as const
-                ).map(([label, iso]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setOccurredOn(iso)}
-                    className={`rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                      occurredOn === iso
-                        ? 'border-ink-2 text-ink'
-                        : 'border-line-2 text-muted hover:text-ink-2'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+              {/* Amount — the first and often only thing they need to touch */}
+              <div className="flex items-center justify-center gap-1.5 px-4 pt-7 pb-5">
+                <span
+                  className="num text-[30px] font-medium"
+                  style={{ color: amount ? 'var(--muted)' : 'var(--faint)' }}
+                >
+                  {kind === 'income' ? '+' : '−'}
+                </span>
                 <input
-                  type="date"
-                  value={occurredOn}
-                  onChange={(e) => setOccurredOn(e.target.value)}
-                  aria-label="Date"
-                  className="ml-auto h-9 rounded-input border border-line-2 bg-field px-2.5 text-[13px] text-ink-2 focus:outline-none"
+                  ref={amountRef}
+                  value={amount}
+                  onChange={(e) => {
+                    setError(null);
+                    setAmount(e.target.value.replace(/[^\d.,]/g, ''));
+                  }}
+                  readOnly={coarse}
+                  inputMode={coarse ? 'none' : 'decimal'}
+                  placeholder="0,00"
+                  aria-label="Amount"
+                  className="num w-full max-w-[240px] bg-transparent text-center text-[52px] font-semibold tracking-[-0.03em] text-ink placeholder:text-faint focus:outline-none"
                 />
+                <span className="num text-[30px] font-medium text-muted">€</span>
               </div>
-            </div>
 
-            {/* Keypad, on touch only */}
-            {coarse && (
-              <div className="grid grid-cols-3 gap-1.5 px-4 pb-3">
-                {KEYS.map((k) => (
+              {/* Categories — one tap, most-used first */}
+              <div className="flex flex-wrap gap-2 px-4 pb-4">
+                {visible.map((c) => {
+                  const on = categoryId === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setCategoryId(on ? null : c.id)}
+                      className={`flex items-center gap-2 rounded-full border px-3 py-2 text-[13.5px] font-medium transition-colors ${
+                        on ? 'text-ink' : 'border-line-2 text-ink-2 hover:text-ink'
+                      }`}
+                      style={
+                        on
+                          ? {
+                              borderColor: categoryColor(c.name),
+                              background: categoryTint(c.name),
+                            }
+                          : undefined
+                      }
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: categoryColor(c.name) }}
+                      />
+                      {c.name}
+                    </button>
+                  );
+                })}
+                {!showAllCategories && ranked.length > TOP_CATEGORIES && (
                   <button
-                    key={k}
                     type="button"
-                    onClick={() => tapKey(k)}
-                    className="num h-14 rounded-[14px] bg-inset text-[22px] font-medium text-ink active:opacity-60"
+                    onClick={() => setShowAllCategories(true)}
+                    className="rounded-full border border-dashed border-line-2 px-3 py-2 text-[13.5px] font-medium text-muted hover:text-ink"
                   >
-                    {k}
+                    more…
                   </button>
-                ))}
+                )}
               </div>
-            )}
 
-            {error && <p className="px-4 pb-2 text-[13px] text-over">{error}</p>}
+              {/* Optional detail */}
+              <div className="flex flex-col gap-2.5 px-4 pb-4">
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={500}
+                  placeholder="What was it? (optional)"
+                  aria-label="Description"
+                  className="h-11 rounded-input border border-line-2 bg-field px-3 text-[15px] text-ink placeholder:text-faint focus:outline-none"
+                />
+                <div className="flex items-center gap-2">
+                  {(
+                    [
+                      ['Today', todayISO()],
+                      ['Yesterday', shiftDays(todayISO(), -1)],
+                    ] as const
+                  ).map(([label, iso]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setOccurredOn(iso)}
+                      className={`rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                        occurredOn === iso
+                          ? 'border-ink-2 text-ink'
+                          : 'border-line-2 text-muted hover:text-ink-2'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <input
+                    type="date"
+                    value={occurredOn}
+                    onChange={(e) => setOccurredOn(e.target.value)}
+                    aria-label="Date"
+                    className="ml-auto h-9 rounded-input border border-line-2 bg-field px-2.5 text-[13px] text-ink-2 focus:outline-none"
+                  />
+                </div>
+              </div>
 
-            <div className="sticky bottom-0 border-t border-line bg-surface px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <button
-                type="submit"
-                disabled={cents === null || create.isPending}
-                className="h-12 w-full rounded-input bg-ink text-[15px] font-semibold text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-              >
-                {create.isPending
-                  ? 'Saving…'
-                  : cents === null
-                    ? 'Enter an amount'
-                    : `Log ${formatMoney(cents)}`}
-              </button>
-            </div>
-          </form>
-        )}
+              {/* Keypad, on touch only */}
+              {coarse && (
+                <div className="grid grid-cols-3 gap-1.5 px-4 pb-3">
+                  {KEYS.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => tapKey(k)}
+                      className="num h-14 rounded-[14px] bg-inset text-[22px] font-medium text-ink active:opacity-60"
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {error && <p className="px-4 pb-2 text-[13px] text-over">{error}</p>}
+
+              <div className="sticky bottom-0 border-t border-line bg-surface px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <button
+                  type="submit"
+                  disabled={cents === null || create.isPending}
+                  className="h-12 w-full rounded-input bg-ink text-[15px] font-semibold text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {create.isPending
+                    ? 'Saving…'
+                    : cents === null
+                      ? 'Enter an amount'
+                      : `Log ${formatMoney(cents)}`}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
-    </div>
+    </Portal>
   );
 }
 
