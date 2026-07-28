@@ -16,6 +16,18 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /healthz
+    # Don't redeploy the API for frontend-only commits. Without this, a CSS tweak
+    # restarts the live service and re-runs migrations for no reason.
+    #
+    # `backend/**` is exhaustive rather than a guess: dockerContext is ./backend,
+    # so nothing outside that directory can change the image. render.yaml is
+    # included because it defines the service itself. Filters apply only to
+    # autodeploys — a manual deploy from the dashboard always works if this is
+    # ever too narrow.
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
     envVars:
       - key: ENV
         value: prod
