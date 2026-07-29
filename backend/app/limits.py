@@ -22,6 +22,17 @@ limiter = Limiter(key_func=get_remote_address)
 # Generous enough that a person fumbling a password never notices.
 AUTH_LIMIT = "10/minute"
 
+# The endpoints that cause an email to be sent. Tighter, because the cost of
+# abuse is somebody else's inbox and a finite monthly send quota.
+#
+# Per-IP only, and that is not the whole story: this limiter counts in process
+# memory, and the free-tier instance is culled after fifteen idle minutes, so
+# these counters reset roughly as often as the app goes quiet. The durable half
+# of the throttle is per-user and lives in the database — see
+# `services.auth_tokens.last_issued_at`, which is what actually stops one
+# address being mailed repeatedly.
+RESET_LIMIT = "5/minute"
+
 
 def rate_limit_handler(request: Request, exc: Exception) -> Response:
     """429 shaped like every other error the API returns.

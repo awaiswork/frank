@@ -226,21 +226,29 @@
   }
 }
 
+/* `backwards`, not `both`, wherever the last keyframe is already the element's
+   own value. `forwards` would keep applying that final `transform` for the life
+   of the page, and an element holding a transform becomes the containing block
+   for any `position: fixed` inside it — which is how a sheet mounted inside a
+   page ended up centred on the page column instead of the viewport. Dropping it
+   changes nothing visually and leaves the element untransformed once the
+   animation ends. `animate-stamp` genuinely lands on a rotation, so it keeps
+   `both`. */
 .animate-bar-grow {
   transform-origin: left;
-  animation: barGrow 0.8s var(--ease-frankly) both;
+  animation: barGrow 0.8s var(--ease-frankly) backwards;
 }
 .animate-fade-up {
-  animation: fadeUp 0.4s var(--ease-frankly) both;
+  animation: fadeUp 0.4s var(--ease-frankly) backwards;
 }
 .animate-field-in {
-  animation: fieldIn 0.5s var(--ease-frankly) both;
+  animation: fieldIn 0.5s var(--ease-frankly) backwards;
 }
 .animate-pop {
-  animation: pop 0.3s var(--ease-frankly) both;
+  animation: pop 0.3s var(--ease-frankly) backwards;
 }
 .animate-tick {
-  animation: tick 0.25s var(--ease-frankly) both;
+  animation: tick 0.25s var(--ease-frankly) backwards;
 }
 .animate-spin-fast {
   animation: spin 0.7s linear infinite;
@@ -275,7 +283,7 @@
   animation: fadeIn 0.18s var(--ease-frankly) both;
 }
 .animate-sheet-in {
-  animation: sheetIn 0.28s var(--ease-frankly) both;
+  animation: sheetIn 0.28s var(--ease-frankly) backwards;
 }
 
 /* --- Ambient field (living interface) -------------------------------------- */

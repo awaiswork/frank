@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
+import { CaptureContext } from '../capture/CaptureContext';
+import { useModal } from '../lib/useModal';
 import { AmbientField } from './AmbientField';
 import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
+import { Portal } from './ui';
+import { VerifyBanner } from './VerifyBanner';
 
 type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
 
@@ -148,6 +152,20 @@ export function Layout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const advisorSoon = ready && !features.advisor;
 
+  // The one handle screens get on the capture sheet, so there is only ever one.
+  const capture = useMemo(() => ({ open: () => setAdding(true) }), []);
+
+  // MoreSheet is reachable only from the mobile tab bar and hides itself at lg.
+  // Widening the window past that would leave it mounted but display:none —
+  // invisible, while still holding the page inert. Close it at the breakpoint.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => mq.matches && setMoreOpen(false);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
   // Logging is the thing people open Frankly to do, so it gets a global shortcut:
   // "a" for add (ignored while typing, so it never eats a keystroke) and ⌘/Ctrl-K.
   useEffect(() => {
@@ -218,16 +236,17 @@ export function Layout() {
   const wordmark = <Wordmark />;
 
   return (
-    <>
+    <CaptureContext.Provider value={capture}>
       <AmbientField />
       <div className="relative z-10 min-h-svh">
+        <VerifyBanner />
         {/* Mobile top bar — the sidebar's identity + theme, without its footprint */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-paper/85 px-4 py-3 backdrop-blur-md lg:hidden">
           {wordmark}
           <button
             onClick={toggleTheme}
             aria-label="Toggle light and dark"
-            className="grid h-10 w-10 place-items-center rounded-[10px] border border-line bg-surface text-ink-2"
+            className="grid h-11 w-11 place-items-center rounded-[10px] border border-line bg-surface text-ink-2"
           >
             {themeIcon}
           </button>
@@ -300,8 +319,14 @@ export function Layout() {
             </div>
           </aside>
 
-          {/* Main. Bottom padding clears the mobile tab bar. */}
-          <main className="min-h-svh px-4 pt-6 pb-32 sm:px-6 lg:px-11 lg:pt-10 lg:pb-20">
+          {/* Main. Bottom padding clears the mobile tab bar.
+              `min-w-0` is load-bearing: this is a grid item, and a grid item's
+              default `min-width: auto` refuses to shrink below its content's
+              min-content width. One unbreakable string anywhere on a page — a
+              long merchant name, a nine-figure amount — would otherwise widen
+              this track, then the grid, then the document, and the whole app
+              would scroll sideways from `lg` up. */}
+          <main className="min-h-svh min-w-0 px-4 pt-6 pb-32 sm:px-6 lg:px-11 lg:pt-10 lg:pb-20">
             <Outlet />
           </main>
         </div>
@@ -350,7 +375,7 @@ export function Layout() {
       )}
 
       <QuickAdd open={adding} onClose={() => setAdding(false)} />
-    </>
+    </CaptureContext.Provider>
   );
 }
 
@@ -412,69 +437,77 @@ function MoreSheet({
     ['/insights', 'Insight', 'insight'],
     ['/settings', 'Settings', 'settings'],
   ];
+  const overlayRef = useModal(onClose);
   return (
-    <div className="fixed inset-0 z-40 flex items-end lg:hidden" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="animate-fade-in absolute inset-0 cursor-default bg-black/45"
-      />
-      <div className="animate-sheet-in relative w-full rounded-t-[22px] border border-line-2 bg-surface px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
-              This month
+    <Portal>
+      <div
+        ref={overlayRef}
+        className="fixed inset-0 z-40 flex items-end focus:outline-none lg:hidden"
+        role="dialog"
+        aria-modal="true"
+      >
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className="animate-fade-in absolute inset-0 cursor-default bg-black/45"
+        />
+        <div className="animate-sheet-in relative max-h-[92svh] w-full overflow-y-auto rounded-t-[22px] border border-line-2 bg-surface px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
+                This month
+              </div>
+              <div className="num text-[15px] font-semibold text-ink">
+                {monthName} · {daysLeft} days left
+              </div>
             </div>
-            <div className="num text-[15px] font-semibold text-ink">
-              {monthName} · {daysLeft} days left
-            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="grid h-9 w-9 place-items-center rounded-full text-muted"
+            >
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex flex-col">
+            {items.map(([to, label, icon]) => (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={onClose}
+                className="flex items-center gap-3 border-b border-line py-3.5 text-[15px] font-semibold text-ink last:border-0"
+              >
+                <span className="grid h-[18px] w-[18px] place-items-center text-muted">
+                  <Icon name={icon} />
+                </span>
+                {label}
+                {to === '/advisor' && advisorSoon && (
+                  <span className="ml-auto rounded-full bg-inset px-1.5 py-px text-[9.5px] font-bold tracking-[0.08em] text-faint uppercase">
+                    Soon
+                  </span>
+                )}
+              </NavLink>
+            ))}
           </div>
           <button
-            onClick={onClose}
-            aria-label="Close"
-            className="grid h-9 w-9 place-items-center rounded-full text-muted"
+            onClick={onSignOut}
+            className="mt-3 h-11 w-full rounded-input border border-line-2 text-[14px] font-semibold text-ink-2"
           >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            Sign out
           </button>
         </div>
-        <div className="flex flex-col">
-          {items.map(([to, label, icon]) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onClose}
-              className="flex items-center gap-3 border-b border-line py-3.5 text-[15px] font-semibold text-ink last:border-0"
-            >
-              <span className="grid h-[18px] w-[18px] place-items-center text-muted">
-                <Icon name={icon} />
-              </span>
-              {label}
-              {to === '/advisor' && advisorSoon && (
-                <span className="ml-auto rounded-full bg-inset px-1.5 py-px text-[9.5px] font-bold tracking-[0.08em] text-faint uppercase">
-                  Soon
-                </span>
-              )}
-            </NavLink>
-          ))}
-        </div>
-        <button
-          onClick={onSignOut}
-          className="mt-3 h-11 w-full rounded-input border border-line-2 text-[14px] font-semibold text-ink-2"
-        >
-          Sign out
-        </button>
       </div>
-    </div>
+    </Portal>
   );
 }

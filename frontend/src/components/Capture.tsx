@@ -2,9 +2,9 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../api/client';
 import { useCategories, useCreateTransaction, useFeatures, useParseNl } from '../api/hooks';
 import type { Category, Kind, NlDraft } from '../api/types';
+import { useCapture } from '../capture/useCapture';
 import { categoryColor } from '../lib/categoryColor';
 import { parseAmountToCents } from '../lib/money';
-import { QuickAdd } from './QuickAdd';
 import { ComingSoonBadge, FranklyCallout } from './bits';
 import { Button } from './ui';
 
@@ -177,7 +177,7 @@ function NlCapture({ placeholder }: { placeholder?: string }) {
  * now the real way to log, on every screen. No second inline form to maintain.
  */
 function ManualCapture() {
-  const [adding, setAdding] = useState(false);
+  const capture = useCapture();
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -214,11 +214,9 @@ function ManualCapture() {
         takes a couple of seconds.
       </FranklyCallout>
 
-      <Button type="button" onClick={() => setAdding(true)} className="w-full">
+      <Button type="button" onClick={capture.open} className="w-full">
         Log an expense
       </Button>
-
-      <QuickAdd open={adding} onClose={() => setAdding(false)} />
     </div>
   );
 }

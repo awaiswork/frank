@@ -19,11 +19,40 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+    # Picks the session lifetime, nothing else. The cookie's security attributes
+    # are identical either way.
+    remember_me: bool = False
 
 
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class VerifyEmailIn(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+
+
+class MessageOut(BaseModel):
+    """The deliberately incurious response.
+
+    `/auth/forgot-password` answers with this whether or not the address belongs
+    to anyone, so the shape and the values must not depend on what we found.
+    `retry_after_seconds` is a constant from configuration for the same reason —
+    a real per-user cooldown would leak existence by varying.
+    """
+
+    detail: str
+    retry_after_seconds: int | None = None
 
 
 class UserOut(BaseModel):
@@ -33,6 +62,7 @@ class UserOut(BaseModel):
     email: EmailStr
     currency: str
     monthly_income_cents: int | None
+    email_verified: bool
 
 
 class UserUpdate(BaseModel):

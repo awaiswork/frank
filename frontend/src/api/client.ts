@@ -2,9 +2,29 @@
  * Tiny typed fetch client. The access token lives in memory only (never in
  * localStorage); the refresh token is an httpOnly cookie the browser sends to
  * /auth/* automatically. On a 401 we transparently try one refresh + retry.
+ *
+ * Every request carries a deadline, because `fetch` has none of its own. A
+ * request to a sleeping free-tier instance — or one issued as a phone's radio
+ * wakes and the connection is open but dead — can stay pending indefinitely: it
+ * never resolves, never rejects, so no `catch` and no `finally` ever runs. A
+ * `finally` cannot save you here; only an abort makes the await settle. Anything
+ * gating UI on such a promise waits forever, which is exactly how the app used
+ * to get stuck on "Loading…" after a night in a backgrounded tab.
  */
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+/** Normal in-app requests. Generous: the API sleeps and is slow to wake. */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Session restore on boot — the call most likely to meet a cold start, since it
+ * waits for Render to spin the instance up *and* for /auth/refresh's user lookup
+ * to wake Neon behind it. (/healthz deliberately touches no database, so the
+ * platform can call the service live while this is still blocked.) Matches the
+ * "up to a minute" the cold-start notice promises.
+ */
+export const BOOTSTRAP_TIMEOUT_MS = 60_000;
 
 let accessToken: string | null = null;
 
@@ -25,29 +45,119 @@ export class ApiError extends Error {
   }
 }
 
-function rawFetch(path: string, init: RequestInit): Promise<Response> {
+/**
+ * Why a call failed, for the callers that must tell the two apart. Only the API
+ * answering 401 means the session is over; everything else — 5xx, a timeout, a
+ * dead connection — is 'unreachable' and must not be dressed up as being signed
+ * out, because a login screen would fail the same way and blame the user for it.
+ */
+export type FailureReason = 'unauthenticated' | 'unreachable';
+
+export type RefreshResult = { ok: true } | { ok: false; reason: FailureReason };
+
+/** Classify a rejection from `apiFetch`. Anything that isn't the API saying 401. */
+export function failureReason(err: unknown): FailureReason {
+  return err instanceof ApiError && err.status === 401 ? 'unauthenticated' : 'unreachable';
+}
+
+/**
+ * Run `work` under a deadline, aborting it if `ms` elapses first.
+ *
+ * Uses a plain timer rather than `AbortSignal.timeout()` so tests can drive it
+ * with fake timers. The deadline spans reading the body too, not just the
+ * headers — a server that answers and then stalls mid-body hangs just as hard as
+ * one that never answers at all.
+ */
+async function withDeadline<T>(
+  ms: number,
+  external: AbortSignal | null | undefined,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new DOMException(`Timed out after ${ms}ms`, 'TimeoutError')),
+    ms,
+  );
+  const relay = () => controller.abort(external?.reason);
+  if (external?.aborted) relay();
+  else external?.addEventListener('abort', relay);
+
+  try {
+    return await work(controller.signal);
+  } finally {
+    clearTimeout(timer);
+    external?.removeEventListener('abort', relay);
+  }
+}
+
+function rawFetch(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined) headers.set('Content-Type', 'application/json');
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-  return fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include' });
+  return fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include', signal });
 }
 
-/** Exchange the refresh cookie for a fresh access token. Returns success.
- * Never throws — a network error (e.g. the API is down) just means "not signed in"
- * so the app falls through to the login screen instead of hanging. */
-export async function refreshAccessToken(): Promise<boolean> {
+let onSessionExpired: (() => void) | null = null;
+
+/**
+ * Register the app's reaction to "the session is gone".
+ *
+ * Boot is not the only way a session ends. It can be revoked from another
+ * device (sign out everywhere), ended by a password reset, or simply expire
+ * while a tab sits open — and all of those first surface as a 401 on some
+ * ordinary query, long after the provider finished deciding you were signed in.
+ * Without this, the refresh quietly fails, the query shows an error, and the
+ * user is left on a screen that no longer works and never says why.
+ *
+ * Only fired for a genuine "not authenticated". An unreachable server is a
+ * different thing and must not throw anyone out to a login form that would fail
+ * the same way.
+ */
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
+let inFlightRefresh: Promise<RefreshResult> | null = null;
+
+/**
+ * Exchange the refresh cookie for a fresh access token. Never throws; reports
+ * why it failed so the caller can route to login or to a retry screen.
+ *
+ * Single-flight: Home mounts five queries at once and Layout a sixth, so a
+ * shared 401 would otherwise fire six simultaneous refreshes at an instance
+ * that — by hypothesis — is already struggling to answer one.
+ */
+export function refreshAccessToken(timeoutMs = DEFAULT_TIMEOUT_MS): Promise<RefreshResult> {
+  inFlightRefresh ??= runRefresh(timeoutMs)
+    .then((result) => {
+      if (!result.ok && result.reason === 'unauthenticated') onSessionExpired?.();
+      return result;
+    })
+    .finally(() => {
+      inFlightRefresh = null;
+    });
+  return inFlightRefresh;
+}
+
+async function runRefresh(timeoutMs: number): Promise<RefreshResult> {
   try {
-    const res = await rawFetch('/auth/refresh', { method: 'POST' });
-    if (!res.ok) {
-      setAccessToken(null);
-      return false;
-    }
-    const data = (await res.json()) as { access_token: string };
-    setAccessToken(data.access_token);
-    return true;
+    return await withDeadline(timeoutMs, null, async (signal) => {
+      const res = await rawFetch('/auth/refresh', { method: 'POST' }, signal);
+      if (!res.ok) {
+        setAccessToken(null);
+        return {
+          ok: false,
+          reason: res.status === 401 ? 'unauthenticated' : 'unreachable',
+        } as const;
+      }
+      const data = (await res.json()) as { access_token: string };
+      setAccessToken(data.access_token);
+      return { ok: true } as const;
+    });
   } catch {
+    // Timed out, aborted, or the request never got off the ground.
     setAccessToken(null);
-    return false;
+    return { ok: false, reason: 'unreachable' };
   }
 }
 
@@ -62,18 +172,25 @@ async function toError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, detail);
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  let res = await rawFetch(path, init);
+export function apiFetch<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  return withDeadline(timeoutMs, init.signal, async (signal) => {
+    let res = await rawFetch(path, init, signal);
 
-  // One transparent refresh + retry on an expired access token.
-  if (res.status === 401 && !path.startsWith('/auth/')) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) res = await rawFetch(path, init);
-  }
+    // One transparent refresh + retry on an expired access token. Bounded: the
+    // refresh calls `rawFetch` directly, so it can never re-enter this function.
+    if (res.status === 401 && !path.startsWith('/auth/')) {
+      const refreshed = await refreshAccessToken(timeoutMs);
+      if (refreshed.ok) res = await rawFetch(path, init, signal);
+    }
 
-  if (!res.ok) throw await toError(res);
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+    if (!res.ok) throw await toError(res);
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
+  });
 }
 
 export const json = (body: unknown): string => JSON.stringify(body);

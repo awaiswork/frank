@@ -12,6 +12,15 @@ export interface User {
   email: string;
   currency: string;
   monthly_income_cents: number | null;
+  /** Verification is a soft gate — false means "show the banner", never "block". */
+  email_verified: boolean;
+}
+
+/** The shape every non-resource auth endpoint answers with. */
+export interface AuthMessage {
+  detail: string;
+  /** Present on cooldown responses so the UI can count down instead of guessing. */
+  retry_after_seconds: number | null;
 }
 
 export interface Category {
