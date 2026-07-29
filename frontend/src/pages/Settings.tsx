@@ -10,7 +10,8 @@ import { currentMonth, monthLabel } from '../lib/date';
 import { formatMoney, parseAmountToCents } from '../lib/money';
 
 export function Settings() {
-  const { user, setUser, logout } = useAuth();
+  const { user, setUser, logout, logoutEverywhere } = useAuth();
+  const [endingAll, setEndingAll] = useState(false);
   const categories = useCategories();
   const navigate = useNavigate();
 
@@ -64,14 +65,28 @@ export function Settings() {
       </Block>
 
       <Block label="Account">
-        <Card className="flex items-center justify-between">
+        <Card className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           <div className="min-w-0">
             <div className="text-[13px] font-medium text-muted">Signed in as</div>
             <div className="truncate text-[15px] font-semibold text-ink">{user?.email}</div>
           </div>
-          <Button variant="secondary" onClick={logout}>
-            Sign out
-          </Button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button variant="secondary" onClick={logout}>
+              Sign out
+            </Button>
+            {/* The one to reach for after "was that me?" — it ends every session
+                on every device, not just this browser's. */}
+            <Button
+              variant="secondary"
+              disabled={endingAll}
+              onClick={() => {
+                setEndingAll(true);
+                void logoutEverywhere().finally(() => setEndingAll(false));
+              }}
+            >
+              {endingAll ? 'Signing out…' : 'Sign out everywhere'}
+            </Button>
+          </div>
         </Card>
       </Block>
     </section>

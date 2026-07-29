@@ -18,12 +18,15 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
     Text,
     UniqueConstraint,
+    Uuid,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB
@@ -39,6 +42,87 @@ class User(UUIDPk, Timestamped, Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, server_default="EUR")
     monthly_income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # NULL means unverified. A timestamp rather than a boolean because "when"
+    # answers questions later that "whether" cannot, at the same storage cost.
+    # Verification is a soft gate: an unverified user keeps full use of the app
+    # and sees a banner. Nothing here locks anyone out of their own money.
+    email_verified_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+
+class RefreshSession(UUIDPk, Base):
+    """One live refresh token. Deleting the row is what makes logout real.
+
+    Deliberately not stored: IP address and user-agent. They are the obvious
+    things to put here and the usual reason a table like this becomes a tracking
+    log. Nothing in this product needs them, so collecting them would be
+    unjustifiable under data minimisation — this is financial data belonging to
+    someone in the EU.
+    """
+
+    __tablename__ = "refresh_sessions"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Every rotation of one login keeps the same family. Reuse of an already
+    # rotated token means someone has a copy they shouldn't, so the response is
+    # to kill the family — this login on this device — rather than every session
+    # the user has everywhere.
+    family_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when this token was exchanged for its successor. Distinguishes "rotated
+    # a moment ago, probably a second tab" from "revoked", which need different
+    # answers. See `refresh_rotation_grace_seconds`.
+    rotated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_refresh_sessions_user", "user_id"),
+        Index("ix_refresh_sessions_family", "family_id"),
+    )
+
+
+class AuthToken(UUIDPk, Base):
+    """A single-use emailed secret: password reset or email verification.
+
+    One table for both because the mechanics are identical — random secret,
+    SHA-256 at rest, an expiry, consumed once — and only the lifetime and the
+    effect of redeeming it differ. Two tables would be the same code twice.
+    """
+
+    __tablename__ = "auth_tokens"
+
+    PASSWORD_RESET = "password_reset"
+    EMAIL_VERIFY = "email_verify"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('password_reset','email_verify')", name="ck_auth_tokens_purpose"
+        ),
+        Index("ix_auth_tokens_user_purpose", "user_id", "purpose"),
+    )
 
 
 class Category(UUIDPk, Timestamped, Base):

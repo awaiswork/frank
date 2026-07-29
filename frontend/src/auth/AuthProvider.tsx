@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { logoutEverywhere as logoutEverywhereRequest, logoutSession } from '../api/auth';
 import {
   BOOTSTRAP_TIMEOUT_MS,
   apiFetch,
@@ -7,6 +8,7 @@ import {
   json,
   refreshAccessToken,
   setAccessToken,
+  setSessionExpiredHandler,
 } from '../api/client';
 import type { TokenOut, User } from '../api/types';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
@@ -16,6 +18,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUserState] = useState<User | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /** True when a live session ended under us, so login can explain itself. */
+  const [expired, setExpired] = useState(false);
 
   const loadUser = useCallback(async () => {
     const me = await apiFetch<User>('/me');
@@ -28,6 +32,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
     setUserState(null);
   }, []);
+
+  /** `forget`, plus the parts that only a deliberate sign-out should touch. */
+  const forgetLocally = useCallback(() => {
+    forget();
+    setStatus('anon');
+    queryClient.clear();
+  }, [forget, queryClient]);
+
+  // A session can end while the app is open — revoked from another device,
+  // ended by a password reset, or simply expired. That surfaces as a 401 on
+  // some ordinary query, which nothing here would otherwise hear about, leaving
+  // the user on a screen whose every panel has quietly failed. Route to login
+  // and say so instead.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      setExpired(true);
+      forgetLocally();
+    });
+    return () => setSessionExpiredHandler(null);
+  }, [forgetLocally]);
 
   // On boot, restore a session from the refresh cookie. Every outcome lands on a
   // terminal status — success, 401, 5xx, network error and timeout alike — so
@@ -62,15 +86,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [attempt, forget]);
 
   const authenticate = useCallback(
-    async (path: '/auth/login' | '/auth/register', email: string, password: string) => {
+    async (
+      path: '/auth/login' | '/auth/register',
+      email: string,
+      password: string,
+      remember = false,
+    ) => {
       // Drop any cached data from a prior session so one account never sees
       // another's (e.g. Frankly's daily note, which we keep fresh for an hour).
       queryClient.clear();
       const token = await apiFetch<TokenOut>(path, {
         method: 'POST',
-        body: json({ email, password }),
+        body: json(
+          path === '/auth/login' ? { email, password, remember_me: remember } : { email, password },
+        ),
       });
       setAccessToken(token.access_token);
+      setExpired(false);
       await loadUser();
     },
     [loadUser, queryClient],
@@ -87,18 +119,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       user,
-      login: (email, password) => authenticate('/auth/login', email, password),
+      sessionExpired: expired,
+      login: (email, password, remember) => authenticate('/auth/login', email, password, remember),
       register: (email, password) => authenticate('/auth/register', email, password),
+      // Tell the server first. The refresh cookie is httpOnly, so clearing
+      // client state alone would leave a working credential in the jar — which
+      // is exactly how signing out used to survive a reload.
       logout: () => {
-        setAccessToken(null);
-        setUserState(null);
-        setStatus('anon');
-        queryClient.clear();
+        void logoutSession().finally(forgetLocally);
+      },
+      logoutEverywhere: async () => {
+        try {
+          await logoutEverywhereRequest();
+        } finally {
+          forgetLocally();
+        }
       },
       setUser: setUserState,
       retry,
     }),
-    [status, user, authenticate, queryClient, retry],
+    [status, user, expired, authenticate, forgetLocally, retry],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

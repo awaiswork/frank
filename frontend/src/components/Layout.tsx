@@ -8,6 +8,7 @@ import { AmbientField } from './AmbientField';
 import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
 import { Portal } from './ui';
+import { VerifyBanner } from './VerifyBanner';
 
 type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
 
@@ -238,6 +239,7 @@ export function Layout() {
     <CaptureContext.Provider value={capture}>
       <AmbientField />
       <div className="relative z-10 min-h-svh">
+        <VerifyBanner />
         {/* Mobile top bar — the sidebar's identity + theme, without its footprint */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-paper/85 px-4 py-3 backdrop-blur-md lg:hidden">
           {wordmark}

@@ -8,7 +8,10 @@ savepoints), so tests never see each other's data.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
+from dataclasses import dataclass
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import Base, get_db
+from app.email import EmailMessage
 from app.main import create_app
 
 
@@ -81,6 +85,14 @@ def _ai_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # The suite registers more accounts per minute than the per-IP limit allows,
     # and every test shares one client host. Throttling is exercised separately.
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    # No test may reach a mail provider, whatever is in the developer's .env.
+    # The `outbox` fixture covers tests that assert on email, but a test that
+    # merely registers a user also triggers a send — and with a real key present
+    # that send would go out over the network, to a real inbox, from CI or from
+    # anyone who ran the suite. Pinning the provider here is what makes "runs
+    # with no provider and no network" true rather than merely usual.
+    monkeypatch.setenv("EMAIL_PROVIDER", "console")
+    monkeypatch.delenv("EMAIL_API_KEY", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -97,6 +109,49 @@ def ai_on(_ai_off: None, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+@dataclass
+class SentEmail:
+    to: str
+    subject: str
+    text: str
+    html: str
+
+    @property
+    def link(self) -> str:
+        """The one URL in the body — the thing a person would click."""
+        match = re.search(r"https?://\S+", self.text)
+        assert match, f"no link in email: {self.subject}"
+        return match.group(0).rstrip(".")
+
+    @property
+    def token(self) -> str:
+        return parse_qs(urlparse(self.link).query)["token"][0]
+
+
+@pytest.fixture
+def outbox(monkeypatch: pytest.MonkeyPatch) -> list[SentEmail]:
+    """Capture email instead of sending it, and hand back the link.
+
+    Patches the sender lookup rather than the provider's HTTP call, so nothing in
+    the suite can reach the network even if a key leaks into the environment.
+    """
+    sent: list[SentEmail] = []
+
+    class Recorder:
+        def send(self, message: EmailMessage) -> None:
+            sent.append(
+                SentEmail(
+                    to=message.to,
+                    subject=message.subject,
+                    text=message.text,
+                    html=message.html,
+                )
+            )
+
+    monkeypatch.setattr("app.email.delivery.get_sender", lambda: Recorder())
+    return sent
 
 
 @pytest.fixture

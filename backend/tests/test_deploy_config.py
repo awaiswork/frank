@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.config import DEV_SECRET, Settings, get_settings
 from app.db import get_db
+from app.limits import limiter
 from app.main import create_app
 
 PASSWORD = "supersecret"
@@ -115,3 +116,67 @@ def test_rate_limit_body_uses_detail(db: Session, monkeypatch: pytest.MonkeyPatc
     assert last is not None
     assert last.status_code == 429
     assert isinstance(last.json()["detail"], str)
+
+
+def test_email_routes_have_a_tighter_ceiling(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Abusing these costs somebody else's inbox and a finite send quota, so the
+    limit is lower than the general auth one."""
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    get_settings.cache_clear()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as client:
+        codes = [
+            client.post(
+                "/auth/forgot-password", json={"email": f"nobody{i}@example.com"}
+            ).status_code
+            for i in range(8)
+        ]
+
+    assert 429 in codes, f"expected a 429 within 8 attempts, got {codes}"
+    assert codes.index(429) >= 5, "the limit should not bite before 5 attempts"
+
+
+def test_rate_limit_resets_when_the_window_passes(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ceiling that never lifts is an outage. `limiter.reset()` is what
+    `create_app` calls per process; this asserts the counters really do clear."""
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+    get_settings.cache_clear()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as client:
+        for i in range(12):
+            client.post("/auth/login", json={"email": f"z{i}@example.com", "password": PASSWORD})
+        blocked = client.post(
+            "/auth/login", json={"email": "z-final@example.com", "password": PASSWORD}
+        )
+        assert blocked.status_code == 429
+
+        limiter.reset()
+        allowed = client.post(
+            "/auth/login", json={"email": "z-final@example.com", "password": PASSWORD}
+        )
+        assert allowed.status_code != 429
+
+
+def test_empty_frontend_origin_is_refused_at_boot() -> None:
+    """Nothing can be built from an empty origin list — not CORS, and not the
+    links we email. Failing here beats a 500 the first time someone asks to
+    reset a password, long after the deploy looked healthy."""
+    with pytest.raises(ValueError, match="FRONTEND_ORIGIN"):
+        Settings(_env_file=None, frontend_origin="")  # type: ignore[call-arg]
+
+
+def test_public_app_url_must_be_an_allowed_origin() -> None:
+    """A link built from an origin the browser will reject is worse than none:
+    the email looks fine and the click fails."""
+    with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
+        Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            frontend_origin="https://app.example.com",
+            public_app_url="https://evil.example.com",
+        )

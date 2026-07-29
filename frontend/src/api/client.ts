@@ -97,6 +97,26 @@ function rawFetch(path: string, init: RequestInit, signal: AbortSignal): Promise
   return fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include', signal });
 }
 
+let onSessionExpired: (() => void) | null = null;
+
+/**
+ * Register the app's reaction to "the session is gone".
+ *
+ * Boot is not the only way a session ends. It can be revoked from another
+ * device (sign out everywhere), ended by a password reset, or simply expire
+ * while a tab sits open — and all of those first surface as a 401 on some
+ * ordinary query, long after the provider finished deciding you were signed in.
+ * Without this, the refresh quietly fails, the query shows an error, and the
+ * user is left on a screen that no longer works and never says why.
+ *
+ * Only fired for a genuine "not authenticated". An unreachable server is a
+ * different thing and must not throw anyone out to a login form that would fail
+ * the same way.
+ */
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
 let inFlightRefresh: Promise<RefreshResult> | null = null;
 
 /**
@@ -108,9 +128,14 @@ let inFlightRefresh: Promise<RefreshResult> | null = null;
  * that — by hypothesis — is already struggling to answer one.
  */
 export function refreshAccessToken(timeoutMs = DEFAULT_TIMEOUT_MS): Promise<RefreshResult> {
-  inFlightRefresh ??= runRefresh(timeoutMs).finally(() => {
-    inFlightRefresh = null;
-  });
+  inFlightRefresh ??= runRefresh(timeoutMs)
+    .then((result) => {
+      if (!result.ok && result.reason === 'unauthenticated') onSessionExpired?.();
+      return result;
+    })
+    .finally(() => {
+      inFlightRefresh = null;
+    });
   return inFlightRefresh;
 }
 

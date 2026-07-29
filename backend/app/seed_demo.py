@@ -169,6 +169,10 @@ def seed_demo(db: Session) -> bool:
         email=DEMO_EMAIL,
         password_hash=hash_password(DEMO_PASSWORD),
         monthly_income_cents=MONTHLY_INCOME_CENTS,
+        # Pre-verified: nobody can read demo@frankly.app's inbox, so leaving it
+        # unverified would show a "confirm your email" banner that can never be
+        # dismissed — over a mailbox that doesn't exist.
+        email_verified_at=dt.datetime.now(dt.UTC),
     )
     db.add(user)
     db.flush()
