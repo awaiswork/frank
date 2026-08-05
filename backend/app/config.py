@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Literal, Self
 
@@ -89,7 +90,17 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.frontend_origin.split(",") if origin.strip()]
+        # Trailing slashes are stripped because an Origin header never has one,
+        # so a configured "https://app.example.com/" would match nothing and CORS
+        # would fail with no error anywhere — the failure mode CLAUDE.md warns
+        # about. Normalising here also keeps `app_base_url` comparing like with
+        # like; it previously stripped one side only, so an identically-typed
+        # PUBLIC_APP_URL could fail to match its own origin.
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.frontend_origin.split(",")
+            if origin.strip()
+        ]
 
     @property
     def app_base_url(self) -> str:
@@ -103,7 +114,17 @@ class Settings(BaseSettings):
         origins = self.cors_origins
         if not origins:  # pragma: no cover — `_check_prod` refuses to boot first
             raise ValueError("FRONTEND_ORIGIN is empty; there is no origin to build links from")
-        return (self.public_app_url or origins[0]).rstrip("/")
+        configured = self.public_app_url.strip().rstrip("/")
+        if configured and configured in origins:
+            return configured
+        if configured:
+            # Misconfigured, but not worth refusing to serve over. Links will
+            # point at the first allowed origin, which is wrong-but-reachable
+            # rather than right-but-rejected. Warned about at boot.
+            logging.getLogger("frankly").warning(
+                '{"event":"public_app_url_ignored","reason":"not_in_frontend_origin"}'
+            )
+        return origins[0]
 
     @model_validator(mode="after")
     def _check_prod(self) -> Self:
@@ -120,17 +141,14 @@ class Settings(BaseSettings):
         # Refuse at boot instead.
         if not self.cors_origins:
             raise ValueError("FRONTEND_ORIGIN must contain at least one origin")
+        # Email misconfiguration is loud but not fatal. These settings govern one
+        # feature; refusing to boot over them would take down budgets, transactions
+        # and every other route with them — a far worse outcome than emails that
+        # don't send. `email_sender()` degrades to the console sender, so the
+        # symptom is "no mail arrived", which is what a missing key means anyway.
         if self.email_provider != "console" and not self.email_api_key:
-            raise ValueError(
-                f"EMAIL_PROVIDER={self.email_provider} needs EMAIL_API_KEY. "
-                "Leave EMAIL_PROVIDER unset to log emails instead of sending them."
-            )
-        # A link built from an origin the browser will refuse is worse than no
-        # link: the email looks fine and the click fails. Catch it at boot.
-        if self.public_app_url and self.public_app_url.rstrip("/") not in self.cors_origins:
-            raise ValueError(
-                "PUBLIC_APP_URL must be one of the origins in FRONTEND_ORIGIN "
-                "(exact match, scheme included, no trailing slash)."
+            logging.getLogger("frankly").warning(
+                '{"event":"email_disabled","reason":"EMAIL_PROVIDER set without EMAIL_API_KEY"}'
             )
         return self
 

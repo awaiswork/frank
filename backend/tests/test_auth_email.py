@@ -393,13 +393,17 @@ class TestEmailProviderIsolation:
 
         assert isinstance(get_sender(), ConsoleSender)
 
-    def test_resend_requires_a_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from app.config import Settings
+    def test_a_provider_without_a_key_falls_back_rather_than_crashing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Deploying EMAIL_PROVIDER without the key is a mistake worth warning
+        about, not one worth taking the API down for."""
+        from app.email import ConsoleSender, get_sender
 
         monkeypatch.setenv("EMAIL_PROVIDER", "resend")
-        monkeypatch.delenv("EMAIL_API_KEY", raising=False)
-        with pytest.raises(ValueError, match="EMAIL_API_KEY"):
-            Settings(_env_file=None)  # type: ignore[call-arg]
+        monkeypatch.setenv("EMAIL_API_KEY", "")
+        get_settings.cache_clear()
+        assert isinstance(get_sender(), ConsoleSender)
 
 
 class TestSuiteCannotSendRealEmail:

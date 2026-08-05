@@ -92,7 +92,10 @@ def _ai_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # anyone who ran the suite. Pinning the provider here is what makes "runs
     # with no provider and no network" true rather than merely usual.
     monkeypatch.setenv("EMAIL_PROVIDER", "console")
-    monkeypatch.delenv("EMAIL_API_KEY", raising=False)
+    # setenv, not delenv: pydantic-settings also reads backend/.env, so deleting
+    # the process variable leaves the file's value in place. Overriding with an
+    # empty string is what actually blanks it.
+    monkeypatch.setenv("EMAIL_API_KEY", "")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

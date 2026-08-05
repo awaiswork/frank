@@ -122,6 +122,9 @@ def get_sender() -> EmailSender:
     CLAUDE.md) and would make every test that swaps the sender a coin toss.
     """
     settings = get_settings()
-    if settings.email_provider == "resend":
+    # A provider named without a key cannot send. Falling back to the console
+    # keeps the app serving and turns the misconfiguration into a log line
+    # rather than an exception on every registration.
+    if settings.email_provider == "resend" and settings.email_api_key:
         return ResendSender(api_key=settings.email_api_key, sender=settings.email_from)
     return ConsoleSender()
