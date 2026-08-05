@@ -171,12 +171,35 @@ def test_empty_frontend_origin_is_refused_at_boot() -> None:
         Settings(_env_file=None, frontend_origin="")  # type: ignore[call-arg]
 
 
-def test_public_app_url_must_be_an_allowed_origin() -> None:
-    """A link built from an origin the browser will reject is worse than none:
-    the email looks fine and the click fails."""
-    with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
-        Settings(  # type: ignore[call-arg]
-            _env_file=None,
-            frontend_origin="https://app.example.com",
-            public_app_url="https://evil.example.com",
-        )
+def test_a_bad_public_app_url_degrades_instead_of_taking_the_api_down() -> None:
+    """These settings govern one feature. Refusing to boot over them would take
+    budgets, transactions and everything else down with the emails — a far worse
+    outcome than links pointing at the wrong-but-allowed origin."""
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        frontend_origin="https://app.example.com",
+        public_app_url="https://evil.example.com",
+    )
+    # Never the unlisted host: the point is that the origin is ours, not theirs.
+    assert settings.app_base_url == "https://app.example.com"
+
+
+def test_origins_are_compared_after_normalising_both_sides() -> None:
+    """A trailing slash on FRONTEND_ORIGIN used to make an identically-typed
+    PUBLIC_APP_URL fail to match itself, and that was a boot failure."""
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        frontend_origin="https://app.example.com/",
+        public_app_url="https://app.example.com",
+    )
+    assert settings.cors_origins == ["https://app.example.com"]
+    assert settings.app_base_url == "https://app.example.com"
+
+
+def test_a_provider_without_a_key_still_boots_and_sends_nothing() -> None:
+    from app.email import ConsoleSender, get_sender
+
+    settings = Settings(_env_file=None, email_provider="resend", email_api_key="")  # type: ignore[call-arg]
+    assert settings.email_provider == "resend"
+    get_settings.cache_clear()
+    assert isinstance(get_sender(), ConsoleSender)
