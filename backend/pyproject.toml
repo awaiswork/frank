@@ -12,7 +12,10 @@ dependencies = [
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
     "bcrypt>=4.1",
-    "pyjwt>=2.9",
+    # [crypto] pulls in `cryptography`, which PyJWT needs for RS256 — the
+    # algorithm Google signs id_tokens with. Without it only HMAC is available
+    # and Google sign-in cannot verify anything.
+    "pyjwt[crypto]>=2.9",
     "anthropic>=0.109.1",
     "slowapi>=0.1.9",
     # Already present transitively via `anthropic`; declared explicitly because

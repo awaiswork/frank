@@ -94,20 +94,39 @@ reload would happily reuse.
 
 **Flows**
 
+**No unproven address reaches the app.** Registering creates the account and
+emails a six-digit code; it returns no token and starts no session. The gate is
+that no credential exists yet, rather than a check on each request — there is no
+state in which an unverified account holds something it could present.
+
 | Flow | What happens |
 |---|---|
-| Register | Creates the account, signs you in, emails a confirmation link (24h) |
-| Log in | `remember_me` picks the session lifetime: 12 hours, or 30 days |
+| Register | Creates the account, emails a code, returns **202 and no token** |
+| Verify code | Redeems it. This is where an email account's session begins |
+| Log in (verified) | `remember_me` picks the session lifetime: 12 hours, or 30 days |
+| Log in (unverified) | **403** with `x-verification-required`; the app routes to the code screen |
+| Google | One click. No code — Google has already proven the address |
 | Refresh | Rotates the token on every use; a retired token replayed later revokes that whole login |
 | Log out | Revokes this session server-side and clears the cookie |
 | Log out everywhere | Revokes every session for the account (Settings → Account) |
-| Forgot password | Emails a one-hour, single-use link. Identical response whether or not the address exists |
-| Reset password | Sets the password, revokes **all** sessions, then sends you to the login form rather than signing you in |
-| Verify email | Confirms the address. Unverified accounts are **not** blocked — they see a dismissible banner with a resend button |
+| Forgot password | Emails a code. Identical response whether or not the address exists |
+| Reset password | Code → ticket → new password. Revokes **all** sessions, then sends you to the login form rather than signing you in |
 
-Tokens are 32 random bytes; only their SHA-256 is stored. SHA-256 rather than
-bcrypt on purpose — these are full-entropy secrets with nothing to guess, so
-bcrypt's deliberate slowness would buy no security and would tax every refresh.
+Two shapes of secret, and the shape decides the hash. **Six-digit codes** get
+bcrypt, a ten-minute life and a five-attempt cap: a million possibilities is
+guessable at machine speed, so the hash has to be slow. **Random 32-byte
+secrets** (reset tickets, OAuth state) get SHA-256 and are looked up *by* the
+hash: nothing to guess, so slowness would buy no security and would tax every
+use. That is the same rule applied in opposite directions, not an inconsistency.
+
+**Google sign-in** is Authorization Code with PKCE. State and the PKCE verifier
+live in `oauth_states` server-side rather than in a cookie, so the flow adds no
+cookie and cannot disturb the cross-site refresh cookie. The `id_token` is
+verified locally against Google's JWKS — signature, `iss`, `aud`, `exp`, and
+`email_verified`. That last one is load-bearing: accounts are linked by email, so
+without it anyone able to attach an unverified address to a Google account could
+claim the matching Frankly account. Only `openid email profile` are requested,
+which are non-sensitive and therefore need no Google review and no domain.
 
 **Email**
 
@@ -168,9 +187,11 @@ check, and every environment variable. Render prompts for the two it can't know:
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | default 15. This is the real delay between revoking a session and access actually stopping |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | no | "remember me" lifetime, default 30 |
 | `REFRESH_SESSION_SHORT_HOURS` | no | lifetime without "remember me", default 12 |
-| `PASSWORD_RESET_TTL_MINUTES` | no | default 60 |
-| `EMAIL_VERIFY_TTL_HOURS` | no | default 24 |
-| `EMAIL_RESEND_COOLDOWN_SECONDS` | no | per-user gap between verification emails, default 60 |
+| `EMAIL_RESEND_COOLDOWN_SECONDS` | no | per-user gap between code emails, default 60 |
+| `OTP_TTL_MINUTES` | no | how long a six-digit code lasts, default 10 |
+| `OTP_MAX_ATTEMPTS` | no | wrong answers before a code is burned, default 5 |
+| `GOOGLE_CLIENT_ID` | no | enables Google sign-in. Empty hides the button and 404s the routes |
+| `GOOGLE_CLIENT_SECRET` | if client id set | secret → `sync: false`, never a literal in `render.yaml` |
 
 The rest are set by the Blueprint: `ENV=prod`, a generated `SECRET_KEY`,
 `LLM_ENABLED=false`, and `COOKIE_SAMESITE=none`. `ANTHROPIC_API_KEY` stays unset — both

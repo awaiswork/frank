@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Category, User
+from tests.conftest import create_account
 
 PASSWORD = "supersecret"
 
@@ -13,11 +14,8 @@ def _h(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_register_returns_token_and_seeds_categories(client: TestClient, db: Session) -> None:
-    resp = client.post("/auth/register", json={"email": "Aino@Example.fi", "password": PASSWORD})
-    assert resp.status_code == 201
-    token = resp.json()["access_token"]
-    assert token
+def test_signing_up_seeds_categories(client: TestClient, db: Session) -> None:
+    token = create_account(client, "Aino@Example.fi", PASSWORD)
 
     # email is CITEXT: stored case-insensitively
     user = db.scalar(select(User).where(User.email == "aino@example.fi"))
@@ -34,12 +32,14 @@ def test_register_returns_token_and_seeds_categories(client: TestClient, db: Ses
 
 def test_duplicate_email_conflicts(client: TestClient) -> None:
     client.post("/auth/register", json={"email": "dup@example.com", "password": PASSWORD})
+    # Still a 409 rather than a neutral answer: hiding this would mean dropping
+    # the "that address is taken" message people need at a signup form.
     again = client.post("/auth/register", json={"email": "DUP@example.com", "password": PASSWORD})
     assert again.status_code == 409
 
 
 def test_login_and_wrong_password(client: TestClient) -> None:
-    client.post("/auth/register", json={"email": "x@example.com", "password": PASSWORD})
+    create_account(client, "x@example.com", PASSWORD)
     ok = client.post("/auth/login", json={"email": "x@example.com", "password": PASSWORD})
     assert ok.status_code == 200
     assert ok.json()["access_token"]
@@ -53,17 +53,14 @@ def test_me_requires_valid_token(client: TestClient) -> None:
 
 
 def test_refresh_issues_new_access_token(client: TestClient) -> None:
-    reg = client.post("/auth/register", json={"email": "r@example.com", "password": PASSWORD})
-    assert reg.status_code == 201
+    create_account(client, "r@example.com", PASSWORD)
     refreshed = client.post("/auth/refresh")  # refresh cookie is in the client jar
     assert refreshed.status_code == 200
     assert refreshed.json()["access_token"]
 
 
 def test_patch_me_updates_income(client: TestClient) -> None:
-    token = client.post(
-        "/auth/register", json={"email": "p@example.com", "password": PASSWORD}
-    ).json()["access_token"]
+    token = create_account(client, "p@example.com", PASSWORD)
     patched = client.patch("/me", headers=_h(token), json={"monthly_income_cents": 290000})
     assert patched.status_code == 200
     assert patched.json()["monthly_income_cents"] == 290000

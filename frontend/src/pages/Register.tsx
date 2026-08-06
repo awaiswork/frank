@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
+import { GoogleButton } from '../components/GoogleButton';
 import { Mark } from '../components/Logo';
 import { Button, Card, Field, TextInput } from '../components/ui';
 
@@ -25,7 +26,9 @@ export function Register() {
     setBusy(true);
     try {
       await register(email, password);
-      navigate('/');
+      // No session exists yet — the address has to be proven first. The address
+      // travels in router state, not the URL, so it stays out of history.
+      void navigate('/verify', { state: { email, purpose: 'verify' } });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create account');
     } finally {
@@ -66,6 +69,11 @@ export function Register() {
               {busy ? 'Creating…' : 'Create account'}
             </Button>
           </form>
+
+          {/* The only sign-up route that works for an address the mail provider
+              cannot reach — and it needs no code, because Google has already
+              proven the address. */}
+          <GoogleButton label="Sign up with Google" />
         </Card>
         <p className="mt-4 text-center text-[13px] text-muted">
           Already have an account?{' '}

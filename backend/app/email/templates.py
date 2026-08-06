@@ -1,19 +1,23 @@
-"""The two emails this app sends.
+"""The two emails this app sends, both carrying a six-digit code.
+
+Codes rather than links, deliberately. A link has to survive a mail client
+rewriting it, works only on the device that opened the inbox, and quietly
+becomes a second way to spend the same secret. A code is read once and typed
+into whatever tab is already open.
 
 Voice follows the product's own copy — first person, short sentences, plain
 verbs, sentence case, no exclamation marks, no emoji, signed "— frankly". It
 should read like the app talking, not like a bank.
 
-Every message: says plainly what to do if you didn't ask for it, states how long
-the link is good for, and carries the same words in both parts. The plain-text
-alternative is not a formality — some clients render it, and anyone reading with
-a screen reader on a text-first client gets it instead of the HTML.
+Every message: leads with the code, states how long it lasts, and says plainly
+what to do if you didn't ask for it. The plain-text alternative is not a
+formality — some clients render it, and anyone on a text-first client or a
+screen reader gets it instead of the HTML.
 
-The HTML deliberately does very little: inline styles, system fonts, no external
-stylesheet, no web font, no image, no tracking pixel. Layout is one centred
-column with a max-width rather than nested tables; that renders correctly
-everywhere except the old Word-engine Outlook, where it degrades to full-width
-text, which is fine.
+The HTML does very little: inline styles, system fonts, no external stylesheet,
+no web font, no image, no tracking pixel. One centred column with a max-width
+rather than nested tables; that renders correctly everywhere except the old
+Word-engine Outlook, where it degrades to full-width text, which is fine.
 """
 
 from __future__ import annotations
@@ -30,12 +34,13 @@ _INK = "#1b1a15"
 _INK_2 = "#46443b"
 _MUTED = "#736f65"
 _LINE = "#e6e1d4"
-_ACCENT = "#1f7a4d"
+_INSET = "#f4f1e8"
 
 _FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+_MONO = "'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace"
 
-# Built once so the template below stays readable at a sane line length. Every
-# rule is inline because an email client will not fetch a stylesheet.
+# Built once so the template stays readable at a sane line length. Every rule is
+# inline because an email client will not fetch a stylesheet.
 _WRAP = f"margin:0;padding:24px 12px;background:{_PAPER};font-family:{_FONT};"
 _CARD = (
     f"max-width:520px;margin:0 auto;background:{_SURFACE};"
@@ -47,33 +52,26 @@ _H1 = (
     f"color:{_INK};letter-spacing:-0.02em;"
 )
 _BODY = f"margin-top:14px;font-size:15px;line-height:1.6;color:{_INK_2};"
-_BUTTON = (
-    f"display:inline-block;background:{_INK};color:{_PAPER};text-decoration:none;"
-    f"font-size:15px;font-weight:600;padding:13px 22px;border-radius:11px;"
+# Wide letter-spacing so the digits are read one at a time rather than as a
+# number, which is how people transcribe them without mistakes.
+_CODE = (
+    f"display:inline-block;margin:22px 0 6px;padding:14px 22px;background:{_INSET};"
+    f"border:1px solid {_LINE};border-radius:12px;font-family:{_MONO};"
+    f"font-size:30px;font-weight:700;letter-spacing:0.28em;color:{_INK};"
 )
-_SMALL = f"margin:18px 0 0;font-size:13px;line-height:1.6;color:{_MUTED};"
 _RULE = f"border:none;border-top:1px solid {_LINE};margin:24px 0 0;"
 _FOOT = f"margin:16px 0 0;font-size:13px;line-height:1.6;color:{_MUTED};"
 _SIGN = f"margin:16px 0 0;font-size:13px;font-weight:700;color:{_MUTED};"
-_LINKC = f"color:{_ACCENT};word-break:break-all;"
 
 
-def _layout(heading: str, body_html: str, button_label: str, url: str, footer: str) -> str:
-    """One centred column. Everything inline, nothing fetched."""
-    safe_url = escape(url, quote=True)
+def _layout(heading: str, body_html: str, code: str, footer: str) -> str:
     return f"""\
 <div style="{_WRAP}">
   <div style="{_CARD}">
     <div style="{_MARK}">frankly</div>
     <h1 style="{_H1}">{escape(heading)}</h1>
     <div style="{_BODY}">{body_html}</div>
-    <div style="margin:26px 0 6px;">
-      <a href="{safe_url}" style="{_BUTTON}">{escape(button_label)}</a>
-    </div>
-    <p style="{_SMALL}">
-      If the button doesn't work, paste this into your browser:<br>
-      <a href="{safe_url}" style="{_LINKC}">{escape(url)}</a>
-    </p>
+    <div style="{_CODE}">{escape(code)}</div>
     <hr style="{_RULE}">
     <p style="{_FOOT}">{escape(footer)}</p>
     <p style="{_SIGN}">— frankly</p>
@@ -81,71 +79,66 @@ def _layout(heading: str, body_html: str, button_label: str, url: str, footer: s
 </div>"""
 
 
-def verification_email(url: str, ttl_hours: int) -> EmailMessage:
-    window = "24 hours" if ttl_hours == 24 else f"{ttl_hours} hours"
-    heading = "Confirm your email"
+def _window(minutes: int) -> str:
+    return "10 minutes" if minutes == 10 else f"{minutes} minutes"
+
+
+def verification_code_email(code: str, ttl_minutes: int) -> EmailMessage:
+    window = _window(ttl_minutes)
     footer = (
         "If you didn't sign up for Frankly, you can ignore this. "
-        "Nothing happens until the link is used."
+        "The code expires on its own and nothing is created until it's used."
     )
     text = f"""\
 Confirm your email
 
-You're nearly set up. Use the link below and I'll know this address is yours.
+Here's the code to finish setting up. It works for the next {window}.
 
-{url}
-
-This link works for the next {window}.
+{code}
 
 {footer}
 
 — frankly
 """
     html = _layout(
-        heading=heading,
+        heading="Confirm your email",
         body_html=(
-            "You're nearly set up. Use the button below and I'll know this "
-            f"address is yours.<br><br>This link works for the next {escape(window)}."
+            f"Here's the code to finish setting up. It works for the next {escape(window)}."
         ),
-        button_label="Confirm my email",
-        url=url,
+        code=code,
         footer=footer,
     )
-    return EmailMessage(to="", subject="Confirm your email", text=text, html=html)
+    return EmailMessage(to="", subject=f"{code} is your Frankly code", text=text, html=html)
 
 
-def password_reset_email(url: str, ttl_minutes: int) -> EmailMessage:
-    window = "hour" if ttl_minutes == 60 else f"{ttl_minutes} minutes"
-    window_phrase = "the next hour" if ttl_minutes == 60 else f"the next {window}"
-    heading = "Set a new password"
+def password_reset_code_email(code: str, ttl_minutes: int) -> EmailMessage:
+    window = _window(ttl_minutes)
     footer = (
         "If you didn't ask to reset your password, you can ignore this — "
-        "your current one still works, and nobody can use this link without your inbox."
+        "your current one still works, and this code is useless without your inbox."
     )
     text = f"""\
-Set a new password
+Reset your password
 
-Use the link below to choose a new one. Signing in again afterwards will sign you
-out everywhere else, which is what you want if someone else has been in here.
+Enter this code to set a new password. It works for the next {window}, and only
+once. Changing your password signs you out everywhere else, which is what you
+want if someone else has been in here.
 
-{url}
-
-This link works for {window_phrase}, and only once.
+{code}
 
 {footer}
 
 — frankly
 """
     html = _layout(
-        heading=heading,
+        heading="Reset your password",
         body_html=(
-            "Use the button below to choose a new one. Signing in again afterwards "
-            "will sign you out everywhere else, which is what you want if someone "
-            "else has been in here.<br><br>"
-            f"This link works for {escape(window_phrase)}, and only once."
+            "Enter this code to set a new password. It works for the next "
+            f"{escape(window)}, and only once.<br><br>Changing your password signs "
+            "you out everywhere else, which is what you want if someone else has "
+            "been in here."
         ),
-        button_label="Set a new password",
-        url=url,
+        code=code,
         footer=footer,
     )
-    return EmailMessage(to="", subject="Set a new password", text=text, html=html)
+    return EmailMessage(to="", subject=f"{code} is your Frankly reset code", text=text, html=html)

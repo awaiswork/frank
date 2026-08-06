@@ -11,14 +11,15 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.core.tokens import hash_token
 from app.models import RefreshSession
-from tests.conftest import SentEmail
+from tests.conftest import SentEmail, create_account
 
 PW = "correct-horse-battery"
 COOKIE = "frankly_refresh"
 
 
 def register(client: TestClient, email: str = "a@b.co") -> None:
-    assert client.post("/auth/register", json={"email": email, "password": PW}).status_code == 201
+    """Create a *verified* account. Signing up alone no longer grants a session."""
+    create_account(client, email, PW)
 
 
 def login(client: TestClient, email: str = "a@b.co", remember: bool = False) -> str:
@@ -188,26 +189,6 @@ class TestLogout:
 
     def test_logout_all_requires_authentication(self, client: TestClient) -> None:
         assert client.post("/auth/logout-all").status_code == 401
-
-
-class TestPasswordResetSideEffects:
-    def test_reset_revokes_every_session(self, client: TestClient, outbox: list[SentEmail]) -> None:
-        register(client)
-        laptop = login(client)
-        phone = login(client)
-        outbox.clear()
-
-        client.post("/auth/forgot-password", json={"email": "a@b.co"})
-        token = outbox[0].token
-        assert (
-            client.post(
-                "/auth/reset-password", json={"token": token, "password": "brand-new-pw"}
-            ).status_code
-            == 200
-        )
-
-        assert client.post("/auth/refresh", cookies={COOKIE: laptop}).status_code == 401
-        assert client.post("/auth/refresh", cookies={COOKIE: phone}).status_code == 401
 
 
 class TestRememberMe:

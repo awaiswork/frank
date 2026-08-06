@@ -96,6 +96,12 @@ def _ai_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # the process variable leaves the file's value in place. Overriding with an
     # empty string is what actually blanks it.
     monkeypatch.setenv("EMAIL_API_KEY", "")
+    # Same reasoning for Google: a developer with real credentials configured
+    # would otherwise be running a different app from CI, and the tests that
+    # assert the routes stay hidden when unconfigured would fail on their
+    # machine only. Tests that need Google opt in via the `google` fixture.
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -133,18 +139,26 @@ class SentEmail:
         return parse_qs(urlparse(self.link).query)["token"][0]
 
 
-@pytest.fixture
+#: Emails captured during the current test. Module-level so plain helper
+#: functions can read it without every call site having to thread a fixture
+#: through — cleared before each test by the autouse fixture below.
+SENT: list[SentEmail] = []
+
+
+@pytest.fixture(autouse=True)
 def outbox(monkeypatch: pytest.MonkeyPatch) -> list[SentEmail]:
-    """Capture email instead of sending it, and hand back the link.
+    """Capture email instead of sending it, and hand back what was sent.
 
     Patches the sender lookup rather than the provider's HTTP call, so nothing in
     the suite can reach the network even if a key leaks into the environment.
+    Autouse because *every* test that registers an account now sends a code, not
+    just the ones that assert on it.
     """
-    sent: list[SentEmail] = []
+    SENT.clear()
 
     class Recorder:
         def send(self, message: EmailMessage) -> None:
-            sent.append(
+            SENT.append(
                 SentEmail(
                     to=message.to,
                     subject=message.subject,
@@ -154,7 +168,23 @@ def outbox(monkeypatch: pytest.MonkeyPatch) -> list[SentEmail]:
             )
 
     monkeypatch.setattr("app.email.delivery.get_sender", lambda: Recorder())
-    return sent
+    return SENT
+
+
+def create_account(client: TestClient, email: str, password: str = "supersecret") -> str:
+    """Register, redeem the emailed code, and return an access token.
+
+    Signing up is two steps now — nothing is issued until the address is proven —
+    so every test that just wants an authenticated client goes through here
+    rather than repeating the dance.
+    """
+    res = client.post("/auth/register", json={"email": email, "password": password})
+    assert res.status_code == 202, res.text
+    match = re.search(r"\b(\d{6})\b", SENT[-1].text)
+    assert match, f"no code in the verification email: {SENT[-1].subject}"
+    token = client.post("/auth/verify-code", json={"email": email, "code": match.group(1)})
+    assert token.status_code == 200, token.text
+    return str(token.json()["access_token"])
 
 
 @pytest.fixture

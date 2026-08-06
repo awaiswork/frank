@@ -1,5 +1,11 @@
 import { createPortal } from 'react-dom';
-import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
+import type {
+  ButtonHTMLAttributes,
+  CSSProperties,
+  InputHTMLAttributes,
+  ReactNode,
+  Ref,
+} from 'react';
 
 /**
  * Renders children on <body>, outside the page tree.
@@ -67,9 +73,14 @@ export function Button({ variant = 'primary', className = '', ...props }: Button
   return <button className={`${base} ${styles[variant]} ${className}`} {...props} />;
 }
 
-export function TextInput({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function TextInput({
+  className = '',
+  ref,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
   return (
     <input
+      ref={ref}
       className={`h-11 w-full rounded-input border border-line-2 bg-field px-3 text-[16px] text-ink placeholder:text-faint ${className}`}
       {...props}
     />

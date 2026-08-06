@@ -1,6 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { logoutEverywhere as logoutEverywhereRequest, logoutSession } from '../api/auth';
+import {
+  logoutEverywhere as logoutEverywhereRequest,
+  logoutSession,
+  registerAccount,
+  verifyCode,
+} from '../api/auth';
 import {
   BOOTSTRAP_TIMEOUT_MS,
   apiFetch,
@@ -85,27 +90,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [attempt, forget]);
 
-  const authenticate = useCallback(
-    async (
-      path: '/auth/login' | '/auth/register',
-      email: string,
-      password: string,
-      remember = false,
-    ) => {
+  /** Take a freshly minted token and become signed in. */
+  const adopt = useCallback(
+    async (token: TokenOut) => {
       // Drop any cached data from a prior session so one account never sees
       // another's (e.g. Frankly's daily note, which we keep fresh for an hour).
       queryClient.clear();
-      const token = await apiFetch<TokenOut>(path, {
-        method: 'POST',
-        body: json(
-          path === '/auth/login' ? { email, password, remember_me: remember } : { email, password },
-        ),
-      });
       setAccessToken(token.access_token);
       setExpired(false);
       await loadUser();
     },
     [loadUser, queryClient],
+  );
+
+  const login = useCallback(
+    async (email: string, password: string, remember = false) => {
+      const token = await apiFetch<TokenOut>('/auth/login', {
+        method: 'POST',
+        body: json({ email, password, remember_me: remember }),
+      });
+      await adopt(token);
+    },
+    [adopt],
   );
 
   // Back to 'loading' here rather than in the effect: a retry is an event, so the
@@ -120,8 +126,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status,
       user,
       sessionExpired: expired,
-      login: (email, password, remember) => authenticate('/auth/login', email, password, remember),
-      register: (email, password) => authenticate('/auth/register', email, password),
+      login,
+      // Creates the account and stops. No token exists yet, by design — the
+      // caller routes to the code screen, which is where a session can start.
+      register: async (email, password) => {
+        await registerAccount(email, password);
+      },
+      verify: async (email, code) => adopt(await verifyCode(email, code)),
       // Tell the server first. The refresh cookie is httpOnly, so clearing
       // client state alone would leave a working credential in the jar — which
       // is exactly how signing out used to survive a reload.
@@ -138,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser: setUserState,
       retry,
     }),
-    [status, user, expired, authenticate, forgetLocally, retry],
+    [status, user, expired, login, adopt, forgetLocally, retry],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

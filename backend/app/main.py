@@ -15,6 +15,7 @@ from app.routers import (
     goals,
     insights,
     nl,
+    oauth,
     transactions,
 )
 from app.schemas import FeaturesOut
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
         return FeaturesOut(ai_enabled=on, nl_capture=on, advisor=on, ai_daily_note=on)
 
     app.include_router(auth.router)
+    app.include_router(oauth.router)
     app.include_router(categories.router)
     app.include_router(transactions.router)
     app.include_router(budgets.router)

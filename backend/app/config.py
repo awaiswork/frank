@@ -47,11 +47,23 @@ class Settings(BaseSettings):
     # takes the whole family down with it. Real replay arrives much later.
     refresh_rotation_grace_seconds: int = 10
 
-    # One-time token lifetimes.
-    password_reset_ttl_minutes: int = 60
-    email_verify_ttl_hours: int = 24
-    # Client-visible cooldown between verification resends, per user.
+    # One-time secret lifetimes. Codes are short because they are short: ten
+    # minutes is long enough to fetch an email and too brief to grind through a
+    # million possibilities, even before the attempt cap.
+    otp_ttl_minutes: int = 10
+    #: Wrong answers before a code is burned and a new one must be requested.
+    otp_max_attempts: int = 5
+    #: The ticket proving an OTP was checked, exchanged for a password change.
+    reset_ticket_ttl_minutes: int = 10
+    #: How long a half-finished Google sign-in stays resumable.
+    oauth_state_ttl_minutes: int = 10
+    # Client-visible cooldown between sends, per user.
     email_resend_cooldown_seconds: int = 60
+
+    # Google sign-in. Empty means the buttons are hidden and the routes 404 —
+    # the app must run for someone who has not set this up.
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     # Email. `console` writes the message to the log and sends nothing, which is
     # the default so the app runs — and the tests pass — with no provider, no key

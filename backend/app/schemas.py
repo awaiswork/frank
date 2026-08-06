@@ -34,12 +34,26 @@ class ForgotPasswordIn(BaseModel):
 
 
 class ResetPasswordIn(BaseModel):
-    token: str = Field(min_length=1, max_length=512)
+    ticket: str = Field(min_length=1, max_length=512)
     password: str = Field(min_length=8, max_length=128)
 
 
-class VerifyEmailIn(BaseModel):
-    token: str = Field(min_length=1, max_length=512)
+class VerifyCodeIn(BaseModel):
+    email: EmailStr
+    # Exactly six digits. Validated here so a malformed code is rejected before
+    # it costs the user one of their five attempts.
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class ResendCodeIn(BaseModel):
+    email: EmailStr
+    purpose: Literal["verify", "reset"] = "verify"
+
+
+class TicketOut(BaseModel):
+    """Proof that a reset code was checked, exchanged for a password change."""
+
+    ticket: str
 
 
 class MessageOut(BaseModel):

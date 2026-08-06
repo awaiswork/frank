@@ -25,9 +25,27 @@ import secrets
 _TOKEN_BYTES = 32
 
 
+#: Six digits is what people will retype from a phone without resenting it. It
+#: is also only a million possibilities, which is why codes are bcrypt-hashed,
+#: expire in minutes, and are burned after a handful of wrong answers — three
+#: constraints that together do the work the length doesn't.
+_CODE_DIGITS = 6
+
+
 def generate_token() -> str:
     """A new single-use secret. The only copy — hash it before storing."""
     return secrets.token_urlsafe(_TOKEN_BYTES)
+
+
+def generate_code() -> str:
+    """A six-digit numeric one-time code, zero-padded.
+
+    `secrets.randbelow` rather than `random`: the latter is a Mersenne Twister
+    seeded from the clock, and its output is predictable from a few prior values.
+    Leading zeros are kept because "007391" and "7391" are different codes to a
+    person typing them, and dropping them would quietly shrink the space.
+    """
+    return f"{secrets.randbelow(10**_CODE_DIGITS):0{_CODE_DIGITS}d}"
 
 
 def hash_token(token: str) -> str:
