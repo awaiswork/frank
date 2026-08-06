@@ -7,6 +7,8 @@ the two fail-fast guards.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -15,6 +17,7 @@ from app.config import DEV_SECRET, Settings, get_settings
 from app.db import get_db
 from app.limits import limiter
 from app.main import create_app
+from tests.conftest import SENT
 
 PASSWORD = "supersecret"
 
@@ -72,10 +75,16 @@ def test_refresh_cookie_follows_the_samesite_setting(
     app = create_app()
     app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as client:
+        # The cookie is minted when the code is redeemed, not at registration —
+        # signing up proves nothing about the address, so no session begins.
+        client.post("/auth/register", json={"email": "cookie@example.com", "password": PASSWORD})
+        match = re.search(r"\b(\d{6})\b", SENT[-1].text)
+        assert match
         resp = client.post(
-            "/auth/register", json={"email": "cookie@example.com", "password": PASSWORD}
+            "/auth/verify-code",
+            json={"email": "cookie@example.com", "code": match.group(1)},
         )
-    assert resp.status_code == 201
+    assert resp.status_code == 200
     set_cookie = resp.headers["set-cookie"]
     assert "samesite=none" in set_cookie.lower()
     assert "secure" in set_cookie.lower()

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { Advisor } from './pages/Advisor';
+import { AuthCallback } from './pages/AuthCallback';
 import { Budgets } from './pages/Budgets';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { Goals } from './pages/Goals';
@@ -13,7 +14,7 @@ import { Register } from './pages/Register';
 import { ResetPassword } from './pages/ResetPassword';
 import { Settings } from './pages/Settings';
 import { Transactions } from './pages/Transactions';
-import { VerifyEmail } from './pages/VerifyEmail';
+import { VerifyCode } from './pages/VerifyCode';
 
 export default function App() {
   return (
@@ -22,9 +23,11 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      {/* Reachable signed in or out: the link is followed from an inbox, which
-          may well be on a device that has never seen this app. */}
-      <Route path="/verify-email" element={<VerifyEmail />} />
+      {/* Codes, not links: nothing here is reachable from an inbox, so these
+          carry their state in the router rather than the URL. */}
+      <Route path="/verify" element={<VerifyCode />} />
+      {/* Where Google's redirect lands. The refresh cookie is already set. */}
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/onboarding" element={<Onboarding />} />
         <Route element={<Layout />}>

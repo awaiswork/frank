@@ -6,18 +6,22 @@ import './index.css';
 import App from './App';
 import { AuthProvider } from './auth/AuthProvider';
 
-// One-time shim for the frank → frankly rename, so nobody loses their theme or
-// gets dropped back into onboarding. Safe to delete once no old keys remain.
-for (const [was, is] of [
-  ['frank-theme', 'frankly-theme'],
-  ['frank-onboarded', 'frankly-onboarded'],
-]) {
-  const old = localStorage.getItem(was);
-  if (old !== null) {
-    if (localStorage.getItem(is) === null) localStorage.setItem(is, old);
-    localStorage.removeItem(was);
+// One-time shim for the frank → frankly rename, so nobody loses their theme.
+// Safe to delete once no old keys remain.
+const legacyTheme = localStorage.getItem('frank-theme');
+if (legacyTheme !== null) {
+  if (localStorage.getItem('frankly-theme') === null) {
+    localStorage.setItem('frankly-theme', legacyTheme);
   }
+  localStorage.removeItem('frank-theme');
 }
+
+// The onboarding flag is per-account now (`lib/onboarding`). The old global
+// keys are not migrated — carrying them over is exactly what made a second
+// account on this browser skip setup it had never seen. Cleared so they don't
+// sit around looking meaningful.
+localStorage.removeItem('frank-onboarded');
+localStorage.removeItem('frankly-onboarded');
 
 // Restore the saved theme before first paint (avoids a flash).
 const savedTheme = localStorage.getItem('frankly-theme');

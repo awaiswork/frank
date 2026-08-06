@@ -17,14 +17,14 @@ from sqlalchemy.orm import Session
 
 from app.models import DailyNote, Transaction, User
 from app.services import daily
+from tests.conftest import create_account
 
 PASSWORD = "supersecret"
 
 
 def _register(client: TestClient, email: str) -> str:
-    resp = client.post("/auth/register", json={"email": email, "password": PASSWORD})
-    assert resp.status_code == 201
-    return str(resp.json()["access_token"])
+    """Verified account + token. Registration alone no longer grants either."""
+    return create_account(client, email, PASSWORD)
 
 
 def _h(token: str) -> dict[str, str]:

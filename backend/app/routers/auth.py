@@ -1,25 +1,31 @@
-"""Auth: register, login, refresh, logout, password reset, email verification.
+"""Auth: register, verify, login, refresh, logout, password reset.
 
-Two things shape most of the code here.
+Three things shape the code here.
+
+**Nothing is issued before the address is proven.** Registering creates the
+account and emails a code; it does not return a token and does not start a
+session. The gate is therefore that no credential exists yet, rather than a check
+bolted onto every request — there is no state in which an unverified account
+holds something it could present. Logging in to an unverified account sends a
+fresh code and says so, instead of letting it in.
 
 **Sessions are real.** The refresh cookie carries an opaque token backed by a row
 in `refresh_sessions`, so logout, logout-all and "a password was just reset"
-actually withdraw access instead of hoping the browser cooperates. Every refresh
-rotates the token; presenting a retired one is treated as theft.
+actually withdraw access. Every refresh rotates the token; presenting a retired
+one is treated as theft.
 
-**Existence is not a public fact.** `/auth/forgot-password` answers identically
-for an address that exists and one that doesn't — same status, same body, same
-constant `retry_after_seconds`, and the work is arranged so the timings sit on
-top of each other. The email goes out on a background task, which is what keeps
-the response quick and, usefully, keeps its duration independent of whether we
-sent anything at all.
+**Existence is not a public fact.** `/auth/forgot-password` and `/auth/resend-code`
+answer identically for an address that exists and one that doesn't — same status,
+same body, same constant `retry_after_seconds`. Email goes out on a background
+task, which keeps the response quick and, usefully, keeps its duration
+independent of whether anything was sent.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, HTTPException, Request, Response, status
@@ -29,7 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.deps import CurrentUser, DbSession
-from app.email import password_reset_email, queue_email, verification_email
+from app.email import password_reset_code_email, queue_email, verification_code_email
 from app.limits import AUTH_LIMIT, RESET_LIMIT, limiter
 from app.models import AuthToken, User
 from app.schemas import (
@@ -37,21 +43,26 @@ from app.schemas import (
     LoginIn,
     MessageOut,
     RegisterIn,
+    ResendCodeIn,
     ResetPasswordIn,
+    TicketOut,
     TokenOut,
     UserOut,
     UserUpdate,
-    VerifyEmailIn,
+    VerifyCodeIn,
 )
 from app.seed import seed_default_categories
 from app.services import auth_tokens, sessions
+from app.services.auth_tokens import CodeResult
 from app.services.sessions import RotationOutcome
 
 log = logging.getLogger("frankly")
 router = APIRouter(tags=["auth"])
 
-# One sentence, used for every outcome of /auth/forgot-password.
-_FORGOT_RESPONSE = "If that address has an account, I've sent a link to reset the password."
+#: One sentence, used for every outcome of the endpoints that must not confirm
+#: whether an address is registered.
+_NEUTRAL = "If that address has an account, I've sent a code to it."
+_CODE_REJECTED = "That code is wrong or has expired."
 
 
 def _set_refresh_cookie(response: Response, token: str, max_age_seconds: int) -> None:
@@ -102,35 +113,39 @@ def _clear_cookie_headers() -> dict[str, str]:
     return {"set-cookie": probe.headers["set-cookie"]}
 
 
-def _start_session(db: DbSession, response: Response, user_id: uuid.UUID, remember: bool) -> None:
+def start_session(db: DbSession, response: Response, user_id: uuid.UUID, remember: bool) -> str:
+    """Issue a refresh session, set the cookie, return an access token.
+
+    Shared with the OAuth router so there is exactly one place a session begins.
+    """
     token, expires_at = sessions.issue(db, user_id, remember=remember)
     _set_refresh_cookie(
         response, token, max_age_seconds=int((expires_at - datetime.now(UTC)).total_seconds())
     )
+    return create_access_token(user_id)
 
 
-def _send_verification(db: DbSession, background: BackgroundTasks, user: User) -> None:
+def _send_code(db: DbSession, background: BackgroundTasks, user: User, purpose: str) -> None:
     settings = get_settings()
-    token = auth_tokens.issue(db, user.id, AuthToken.EMAIL_VERIFY)
-    url = f"{settings.app_base_url}/verify-email?token={token}"
-    queue_email(
-        background,
-        verification_email(url, settings.email_verify_ttl_hours),
-        to=user.email,
-        user_id=user.id,
-        purpose=AuthToken.EMAIL_VERIFY,
+    code = auth_tokens.issue_code(db, user.id, purpose)
+    message = (
+        verification_code_email(code, settings.otp_ttl_minutes)
+        if purpose == AuthToken.EMAIL_VERIFY_CODE
+        else password_reset_code_email(code, settings.otp_ttl_minutes)
     )
+    queue_email(background, message, to=user.email, user_id=user.id, purpose=purpose)
 
 
-@router.post("/auth/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+@router.post("/auth/register", response_model=MessageOut, status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit(AUTH_LIMIT)
 def register(
-    request: Request,
-    body: RegisterIn,
-    response: Response,
-    db: DbSession,
-    background: BackgroundTasks,
-) -> TokenOut:
+    request: Request, body: RegisterIn, db: DbSession, background: BackgroundTasks
+) -> MessageOut:
+    """Create the account and email a code. Deliberately returns no token.
+
+    202 rather than 201: the account exists but is not yet usable, and the
+    caller's next step is to prove the address, not to start using it.
+    """
     user = User(email=body.email, password_hash=hash_password(body.password))
     db.add(user)
     try:
@@ -139,22 +154,111 @@ def register(
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered") from exc
     seed_default_categories(db, user.id)
-    _send_verification(db, background, user)
-    _start_session(db, response, user.id, remember=False)
+    _send_code(db, background, user, AuthToken.EMAIL_VERIFY_CODE)
     db.commit()
-    return TokenOut(access_token=create_access_token(user.id))
+    log.info('{"event":"registered","user_id":"%s"}', user.id)
+    return MessageOut(
+        detail="Check your email for a code.",
+        retry_after_seconds=get_settings().email_resend_cooldown_seconds,
+    )
+
+
+@router.post("/auth/verify-code", response_model=TokenOut)
+@limiter.limit(AUTH_LIMIT)
+def verify_code(
+    request: Request, body: VerifyCodeIn, response: Response, db: DbSession
+) -> TokenOut:
+    """Redeem a signup code. This is the only way an email account gets in."""
+    user = db.scalar(select(User).where(User.email == body.email))
+    if user is None:
+        # Same answer as a wrong code: whether the address exists is not
+        # something this endpoint is willing to say.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, _CODE_REJECTED)
+
+    if user.email_verified_at is not None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "That address is already confirmed. Sign in instead."
+        )
+
+    check = auth_tokens.check_code(db, user.id, AuthToken.EMAIL_VERIFY_CODE, body.code)
+    if check.result is CodeResult.TOO_MANY_ATTEMPTS:
+        db.commit()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Too many wrong tries. Ask for a new code.",
+        )
+    if check.result is not CodeResult.OK:
+        db.commit()  # the failed attempt must persist, or the cap means nothing
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, _CODE_REJECTED)
+
+    user.email_verified_at = datetime.now(UTC)
+    access = start_session(db, response, user.id, remember=False)
+    db.commit()
+    log.info('{"event":"email_verified","user_id":"%s"}', user.id)
+    return TokenOut(access_token=access)
+
+
+@router.post("/auth/resend-code", response_model=MessageOut)
+@limiter.limit(RESET_LIMIT)
+def resend_code(
+    request: Request, body: ResendCodeIn, db: DbSession, background: BackgroundTasks
+) -> MessageOut:
+    """Send another code.
+
+    Unauthenticated by necessity — a gated account has no token to present — so
+    the response must be identical whether or not the address is registered, and
+    whether or not it was already confirmed.
+    """
+    settings = get_settings()
+    user = db.scalar(select(User).where(User.email == body.email))
+    purpose = (
+        AuthToken.EMAIL_VERIFY_CODE if body.purpose == "verify" else AuthToken.PASSWORD_RESET_CODE
+    )
+
+    eligible = user is not None and (
+        purpose == AuthToken.PASSWORD_RESET_CODE or user.email_verified_at is None
+    )
+    if (
+        user is not None
+        and eligible
+        and auth_tokens.seconds_until_resend(db, user.id, purpose) == 0
+    ):
+        _send_code(db, background, user, purpose)
+        db.commit()
+
+    # Constant, not computed: a real remaining cooldown would differ between a
+    # registered address and an unknown one, which is the leak this avoids.
+    return MessageOut(detail=_NEUTRAL, retry_after_seconds=settings.email_resend_cooldown_seconds)
 
 
 @router.post("/auth/login", response_model=TokenOut)
 @limiter.limit(AUTH_LIMIT)
 def login(request: Request, body: LoginIn, response: Response, db: DbSession) -> TokenOut:
     user = db.scalar(select(User).where(User.email == body.email))
-    if user is None or not verify_password(body.password, user.password_hash):
+    # A null hash means the account only ever used Google. Answered as an
+    # ordinary failure rather than "this address uses Google", which would
+    # confirm the account exists to anyone who guessed the address.
+    if user is None or user.password_hash is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
+
+    if user.email_verified_at is None:
+        # Correct password, unproven address. Deliberately does *not* send the
+        # code from here: background tasks are attached to a response, and this
+        # path raises, so anything queued would be discarded silently. The client
+        # asks `/auth/resend-code` next, which is the one place that sends them
+        # and already carries the cooldown and the enumeration-safe response.
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Confirm your email to sign in.",
+            headers={"x-verification-required": "1"},
+        )
+
     sessions.purge_dead(db, user.id)
-    _start_session(db, response, user.id, remember=body.remember_me)
+    access = start_session(db, response, user.id, remember=body.remember_me)
     db.commit()
-    return TokenOut(access_token=create_access_token(user.id))
+    return TokenOut(access_token=access)
 
 
 @router.post("/auth/refresh", response_model=TokenOut)
@@ -217,119 +321,80 @@ def logout_all(user: CurrentUser, db: DbSession, response: Response) -> MessageO
 @router.post("/auth/forgot-password", response_model=MessageOut)
 @limiter.limit(RESET_LIMIT)
 def forgot_password(
-    request: Request,
-    body: ForgotPasswordIn,
-    db: DbSession,
-    background: BackgroundTasks,
+    request: Request, body: ForgotPasswordIn, db: DbSession, background: BackgroundTasks
 ) -> MessageOut:
     """Always the same answer. Never confirms whether the address is registered."""
     settings = get_settings()
     user = db.scalar(select(User).where(User.email == body.email))
 
     if user is not None:
-        last = auth_tokens.last_issued_at(db, user.id, AuthToken.PASSWORD_RESET)
-        cooling = last is not None and datetime.now(UTC) - last < timedelta(
-            seconds=settings.email_resend_cooldown_seconds
-        )
-        if not cooling:
-            token = auth_tokens.issue(db, user.id, AuthToken.PASSWORD_RESET)
-            url = f"{settings.app_base_url}/reset-password?token={token}"
-            queue_email(
-                background,
-                password_reset_email(url, settings.password_reset_ttl_minutes),
-                to=user.email,
-                user_id=user.id,
-                purpose=AuthToken.PASSWORD_RESET,
-            )
+        if auth_tokens.seconds_until_resend(db, user.id, AuthToken.PASSWORD_RESET_CODE) == 0:
+            _send_code(db, background, user, AuthToken.PASSWORD_RESET_CODE)
             log.info('{"event":"password_reset_requested","user_id":"%s"}', user.id)
         db.commit()
 
-    # Constant, not computed: a real remaining-cooldown would differ between a
-    # registered address and an unknown one, which is the leak this endpoint
-    # exists to avoid.
-    return MessageOut(
-        detail=_FORGOT_RESPONSE,
-        retry_after_seconds=settings.email_resend_cooldown_seconds,
-    )
+    return MessageOut(detail=_NEUTRAL, retry_after_seconds=settings.email_resend_cooldown_seconds)
+
+
+@router.post("/auth/verify-reset-code", response_model=TicketOut)
+@limiter.limit(AUTH_LIMIT)
+def verify_reset_code(request: Request, body: VerifyCodeIn, db: DbSession) -> TicketOut:
+    """Exchange a reset code for a ticket.
+
+    Two steps rather than one so a wrong code is discovered *before* the person
+    has typed a new password. The ticket is a random single-use secret with a
+    life of its own, so the code can be consumed here and cannot be replayed.
+    """
+    user = db.scalar(select(User).where(User.email == body.email))
+    if user is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, _CODE_REJECTED)
+
+    check = auth_tokens.check_code(db, user.id, AuthToken.PASSWORD_RESET_CODE, body.code)
+    if check.result is CodeResult.TOO_MANY_ATTEMPTS:
+        db.commit()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Too many wrong tries. Ask for a new code."
+        )
+    if check.result is not CodeResult.OK:
+        db.commit()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, _CODE_REJECTED)
+
+    ticket = auth_tokens.issue_secret(db, user.id, AuthToken.PASSWORD_RESET_TICKET)
+    db.commit()
+    return TicketOut(ticket=ticket)
 
 
 @router.post("/auth/reset-password", response_model=MessageOut)
 def reset_password(body: ResetPasswordIn, db: DbSession, response: Response) -> MessageOut:
     """Set a new password, then invalidate everything that came before it.
 
-    Deliberately does not sign the user in. Whoever just used this link proved
-    they can read the inbox, which is not the same as proving they are the
-    account holder — so they go to the login form like anyone else.
+    Deliberately does not sign the user in. Whoever redeemed the code proved they
+    can read the inbox, which is not the same as proving they are the account
+    holder — so they go to the login form like anyone else.
     """
-    user_id = auth_tokens.consume(db, body.token, AuthToken.PASSWORD_RESET)
-    if user_id is None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "That reset link is invalid or has expired."
-        )
+    token = auth_tokens.consume_secret(db, body.ticket, AuthToken.PASSWORD_RESET_TICKET)
+    if token is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That reset has expired. Start again.")
 
-    user = db.get(User, user_id)
-    if user is None:  # pragma: no cover — FK makes this unreachable
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That reset link is no longer valid.")
+    user = db.get(User, token.user_id)
+    if user is None:  # pragma: no cover — the FK makes this unreachable
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That reset is no longer valid.")
 
     user.password_hash = hash_password(body.password)
-    # Anyone still holding a session got it before the password changed, which is
-    # exactly the situation a reset is meant to end.
+    # Someone resetting a password may be doing it *because* of an intruder, and
+    # a session issued before the change would outlive it by up to thirty days.
     sessions.revoke_all(db, user.id)
-    auth_tokens.invalidate_outstanding(db, user.id, AuthToken.PASSWORD_RESET)
+    auth_tokens.invalidate_outstanding(db, user.id, AuthToken.PASSWORD_RESET_CODE)
+    auth_tokens.invalidate_outstanding(db, user.id, AuthToken.PASSWORD_RESET_TICKET)
+    # A reset also proves the address, so an account gated on verification is
+    # unblocked by it — otherwise it could be reset but never entered.
+    if user.email_verified_at is None:
+        user.email_verified_at = datetime.now(UTC)
     db.commit()
 
     _clear_refresh_cookie(response)
     log.info('{"event":"password_reset_completed","user_id":"%s"}', user.id)
     return MessageOut(detail="Your password is set. Sign in with it.")
-
-
-@router.post("/auth/verify-email", response_model=MessageOut)
-def verify_email(body: VerifyEmailIn, db: DbSession) -> MessageOut:
-    user_id = auth_tokens.consume(db, body.token, AuthToken.EMAIL_VERIFY)
-    if user_id is None:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "That confirmation link is invalid or has expired."
-        )
-    user = db.get(User, user_id)
-    if user is None:  # pragma: no cover — FK makes this unreachable
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "That confirmation link is no longer valid."
-        )
-    if user.email_verified_at is None:
-        user.email_verified_at = datetime.now(UTC)
-    db.commit()
-    return MessageOut(detail="Your email is confirmed.")
-
-
-@router.post("/auth/resend-verification", response_model=MessageOut)
-@limiter.limit(RESET_LIMIT)
-def resend_verification(
-    request: Request, user: CurrentUser, db: DbSession, background: BackgroundTasks
-) -> MessageOut:
-    """Send the confirmation email again.
-
-    Authenticated, which sidesteps enumeration entirely — you can only ask for
-    your own address, and you already had to know the password to get here.
-    """
-    settings = get_settings()
-    cooldown = settings.email_resend_cooldown_seconds
-
-    if user.email_verified_at is not None:
-        return MessageOut(detail="That address is already confirmed.")
-
-    last = auth_tokens.last_issued_at(db, user.id, AuthToken.EMAIL_VERIFY)
-    if last is not None:
-        elapsed = datetime.now(UTC) - last
-        if elapsed < timedelta(seconds=cooldown):
-            remaining = int((timedelta(seconds=cooldown) - elapsed).total_seconds()) + 1
-            return MessageOut(
-                detail="I've already sent one. Give it a moment.",
-                retry_after_seconds=remaining,
-            )
-
-    _send_verification(db, background, user)
-    db.commit()
-    return MessageOut(detail="Sent. Check your inbox.", retry_after_seconds=cooldown)
 
 
 @router.get("/me", response_model=UserOut)

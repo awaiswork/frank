@@ -17,7 +17,13 @@ export interface AuthContextValue {
   sessionExpired: boolean;
   /** `remember` picks the session lifetime — 12 hours, or 30 days. */
   login: (email: string, password: string, remember?: boolean) => Promise<void>;
+  /**
+   * Create the account. Resolves with no session: registration proves nothing
+   * about the address, so the caller sends the user to the code screen.
+   */
   register: (email: string, password: string) => Promise<void>;
+  /** Redeem a signup code. This is where an email account's session begins. */
+  verify: (email: string, code: string) => Promise<void>;
   logout: () => void;
   logoutEverywhere: () => Promise<void>;
   setUser: (user: User) => void;

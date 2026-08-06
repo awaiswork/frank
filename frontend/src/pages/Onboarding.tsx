@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCategories, useCreateGoal, useUpdateMe, useUpsertBudget } from '../api/hooks';
 import type { Category } from '../api/types';
 import { useAuth } from '../auth/useAuth';
+import { markOnboarded } from '../lib/onboarding';
 import { Wordmark } from '../components/Logo';
 import { Button, TextInput } from '../components/ui';
 import { categoryColor } from '../lib/categoryColor';
@@ -33,11 +34,8 @@ export function Onboarding() {
   const busy = updateMe.isPending || upsertBudget.isPending || createGoal.isPending;
 
   function finish() {
-    try {
-      localStorage.setItem('frankly-onboarded', '1');
-    } catch {
-      /* ignore */
-    }
+    // `markOnboarded` swallows its own storage errors, so no try/catch here.
+    if (user) markOnboarded(user.id);
     navigate('/', { replace: true });
   }
 

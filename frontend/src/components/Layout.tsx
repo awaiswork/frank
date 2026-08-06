@@ -3,12 +3,12 @@ import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
 import { CaptureContext } from '../capture/CaptureContext';
+import { hasOnboarded } from '../lib/onboarding';
 import { useModal } from '../lib/useModal';
 import { AmbientField } from './AmbientField';
 import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
 import { Portal } from './ui';
-import { VerifyBanner } from './VerifyBanner';
 
 type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
 
@@ -192,9 +192,11 @@ export function Layout() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // First-run users (no income yet) land in onboarding until they finish or skip.
+  // First-run users (no income yet) land in onboarding until they finish or
+  // skip. Checked per account: the flag used to be global, so a second account
+  // on the same browser inherited the first one's "already seen it".
   const needsOnboarding =
-    user != null && user.monthly_income_cents == null && !localStorage.getItem('frankly-onboarded');
+    user != null && user.monthly_income_cents == null && !hasOnboarded(user.id);
   if (needsOnboarding) return <Navigate to="/onboarding" replace />;
 
   const today = new Date();
@@ -239,7 +241,6 @@ export function Layout() {
     <CaptureContext.Provider value={capture}>
       <AmbientField />
       <div className="relative z-10 min-h-svh">
-        <VerifyBanner />
         {/* Mobile top bar — the sidebar's identity + theme, without its footprint */}
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-paper/85 px-4 py-3 backdrop-blur-md lg:hidden">
           {wordmark}

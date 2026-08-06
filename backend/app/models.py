@@ -23,6 +23,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     Text,
     UniqueConstraint,
     Uuid,
@@ -39,13 +40,17 @@ class User(UUIDPk, Timestamped, Base):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(CITEXT, unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # NULL for an account that only ever signed in with Google. Every read has to
+    # cope with that: `login` treats a null hash as a failed password rather than
+    # announcing "this address uses Google", which would confirm the account
+    # exists to anyone who asked.
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, server_default="EUR")
     monthly_income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # NULL means unverified. A timestamp rather than a boolean because "when"
-    # answers questions later that "whether" cannot, at the same storage cost.
-    # Verification is a soft gate: an unverified user keeps full use of the app
-    # and sees a banner. Nothing here locks anyone out of their own money.
+    # NULL means unverified, and unverified means no session is ever issued — the
+    # gate is that a token doesn't exist yet, not a check on each request. A
+    # timestamp rather than a boolean because "when" answers questions later that
+    # "whether" cannot, at the same storage cost.
     email_verified_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -94,34 +99,107 @@ class RefreshSession(UUIDPk, Base):
 
 
 class AuthToken(UUIDPk, Base):
-    """A single-use emailed secret: password reset or email verification.
+    """A short-lived single-use secret, of one of four kinds.
 
-    One table for both because the mechanics are identical — random secret,
-    SHA-256 at rest, an expiry, consumed once — and only the lifetime and the
-    effect of redeeming it differ. Two tables would be the same code twice.
+    One table because the mechanics are identical — a secret, a hash at rest, an
+    expiry, consumed once — and only the lifetime and the effect of redeeming it
+    differ. What varies is the *shape* of the secret, and that changes the hash:
+
+    - the two ``*_code`` purposes hold a six-digit OTP, which is guessable, so
+      the hash is bcrypt and the row is found by ``(user_id, purpose)``;
+    - ``password_reset_ticket`` holds 32 random bytes, which are not, so the hash
+      is SHA-256 and the row is found *by the hash*.
+
+    ``secret_hash`` is therefore not uniquely indexed: two users could in
+    principle hold bcrypt hashes that collide in no meaningful way, and more to
+    the point a bcrypt hash of the same code differs every time.
     """
 
     __tablename__ = "auth_tokens"
 
-    PASSWORD_RESET = "password_reset"
-    EMAIL_VERIFY = "email_verify"
+    EMAIL_VERIFY_CODE = "email_verify_code"
+    PASSWORD_RESET_CODE = "password_reset_code"
+    PASSWORD_RESET_TICKET = "password_reset_ticket"
+
+    #: The purposes whose secret is a six-digit code rather than a random string.
+    CODE_PURPOSES = (EMAIL_VERIFY_CODE, PASSWORD_RESET_CODE)
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
-    token_hash: Mapped[str] = mapped_column(CHAR(64), unique=True, nullable=False)
+    secret_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # A six-digit code is one of a million, which is guessable at machine speed.
+    # Without a ceiling on wrong answers that million collapses to a few thousand
+    # tries, and the code would be materially weaker than the link it replaced.
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('email_verify_code','password_reset_code','password_reset_ticket')",
+            name="ck_auth_tokens_purpose",
+        ),
+        Index("ix_auth_tokens_user_purpose", "user_id", "purpose"),
+        Index("ix_auth_tokens_secret_hash", "secret_hash"),
+    )
+
+
+class OAuthState(UUIDPk, Base):
+    """One half-finished Google sign-in.
+
+    Its own table rather than a row in ``auth_tokens`` because it belongs to a
+    browser mid-flow, not to a user — there may not be an account yet, and
+    ``auth_tokens.user_id`` is NOT NULL for good reason. Forcing it in would have
+    meant either a nullable FK on every other purpose or a reserved sentinel user,
+    both of which are worse than one small table.
+
+    Living here also keeps OAuth out of the cookie jar entirely: the state and the
+    PKCE verifier are server-side, so the flow adds no cookie and cannot disturb
+    the cross-site refresh cookie, which is fragile and deliberately untouched.
+    """
+
+    __tablename__ = "oauth_states"
+
+    state_hash: Mapped[str] = mapped_column(CHAR(64), unique=True, nullable=False)
+    #: PKCE verifier. Binds the authorization code to the browser that started
+    #: the flow, so a code intercepted in the redirect cannot be redeemed alone.
+    code_verifier: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+
+class OAuthAccount(UUIDPk, Base):
+    """A third-party identity attached to one of our users.
+
+    Keyed on the provider's stable subject id, never on the email — people change
+    the address on a Google account, and matching on a mutable field would hand
+    the wrong account to whoever inherits an old one.
+    """
+
+    __tablename__ = "oauth_accounts"
+
+    GOOGLE = "google"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_account_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
     __table_args__ = (
-        CheckConstraint(
-            "purpose IN ('password_reset','email_verify')", name="ck_auth_tokens_purpose"
-        ),
-        Index("ix_auth_tokens_user_purpose", "user_id", "purpose"),
+        UniqueConstraint("provider", "provider_account_id", name="uq_oauth_provider_account"),
+        Index("ix_oauth_accounts_user", "user_id"),
     )
 
 

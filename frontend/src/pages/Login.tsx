@@ -1,13 +1,23 @@
 import { useState, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
+import { GoogleButton } from '../components/GoogleButton';
 import { Mark } from '../components/Logo';
 import { Button, Card, Field, TextInput } from '../components/ui';
+
+/** What came back from an OAuth round trip that didn't end in a session. */
+const OAUTH_MESSAGES: Record<string, string> = {
+  cancelled: 'Google sign-in was cancelled.',
+  expired: 'That sign-in took too long. Try again.',
+  failed: "Google sign-in didn't work. Try again, or use your password.",
+  unreachable: "I couldn't reach the server after Google. Try again in a moment.",
+};
 
 export function Login() {
   const { status, login, sessionExpired } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
@@ -24,6 +34,12 @@ export function Login() {
       await login(email, password, remember);
       navigate('/');
     } catch (err) {
+      // 403 is not a failure to show — it means the password was right and the
+      // address still needs proving. Send them to the code screen instead.
+      if (err instanceof ApiError && err.status === 403) {
+        void navigate('/verify', { state: { email, purpose: 'verify' } });
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Could not log in');
     } finally {
       setBusy(false);
@@ -39,6 +55,11 @@ export function Login() {
           <p className="mt-1 text-[14.5px] text-muted">Honest advice on what you can spend.</p>
         </div>
         <Card>
+          {OAUTH_MESSAGES[params.get('oauth') ?? ''] && (
+            <p className="mb-4 rounded-[10px] bg-wait-soft px-3 py-2.5 text-[13.5px] leading-relaxed text-ink-2">
+              {OAUTH_MESSAGES[params.get('oauth') ?? '']}
+            </p>
+          )}
           {sessionExpired && (
             <p className="mb-4 rounded-[10px] bg-wait-soft px-3 py-2.5 text-[13.5px] leading-relaxed text-ink-2">
               You were signed out — the session ended or was signed out from another device.
@@ -79,6 +100,8 @@ export function Login() {
               {busy ? 'Logging in…' : 'Log in'}
             </Button>
           </form>
+
+          <GoogleButton label="Continue with Google" />
         </Card>
         <p className="mt-4 text-center text-[13px] text-muted">
           <Link to="/forgot-password" className="font-semibold text-ink-2 hover:underline">

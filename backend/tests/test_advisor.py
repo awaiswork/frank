@@ -18,15 +18,15 @@ from sqlalchemy.orm import Session
 
 from app.models import Budget, Category, SavingsGoal, Transaction, User
 from app.services import advisor
+from tests.conftest import create_account
 
 PASSWORD = "supersecret"
 TODAY = dt.date(2026, 6, 12)
 
 
 def _register(client: TestClient, email: str) -> str:
-    resp = client.post("/auth/register", json={"email": email, "password": PASSWORD})
-    assert resp.status_code == 201
-    return str(resp.json()["access_token"])
+    """Verified account + token. Registration alone no longer grants either."""
+    return create_account(client, email, PASSWORD)
 
 
 def _h(token: str) -> dict[str, str]:
