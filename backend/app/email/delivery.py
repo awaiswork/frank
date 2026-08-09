@@ -19,7 +19,7 @@ import uuid
 
 from fastapi import BackgroundTasks
 
-from app.email.sender import EmailMessage, get_sender
+from app.email.sender import EmailMessage, SendFailed, get_sender
 
 log = logging.getLogger("frankly")
 
@@ -29,6 +29,18 @@ def _deliver(message: EmailMessage, user_id: uuid.UUID, purpose: str) -> None:
     try:
         get_sender().send(message)
         log.info('{"event":"email_sent","user_id":"%s","purpose":"%s"}', user_id, purpose)
+    except SendFailed as exc:
+        # The provider answered and said no. Status and its own error label are
+        # both safe — `SendFailed` already dropped the prose that quotes the
+        # address — and they are the difference between "mail isn't arriving"
+        # and "403 validation_error: the domain isn't verified".
+        log.warning(
+            '{"event":"email_send_failed","user_id":"%s","purpose":"%s","status":%d,"error":"%s"}',
+            user_id,
+            purpose,
+            exc.status_code,
+            exc.error_name,
+        )
     except Exception as exc:  # noqa: BLE001 — a failed email must not crash a worker
         # Type only. The address, subject, body and link are all off limits, and
         # provider errors have a habit of quoting the payload back at you.

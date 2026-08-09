@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -22,10 +24,26 @@ from app.config import get_settings
 
 log = logging.getLogger("frankly")
 
-# The provider gets one shot and a short leash. This runs in a background task,
-# so a slow provider costs nobody a response — but an unbounded wait would pin a
-# threadpool worker for as long as the socket stayed open.
-_TIMEOUT_SECONDS = 5.0
+# Split rather than one number, because the two failures are not alike. Refusing
+# to wait more than five seconds for a *connection* is right — an unreachable
+# provider should fail fast. Refusing to wait more than five seconds for the
+# *response* is not: this runs in a background task where nobody is waiting, and
+# a free-tier instance is CPU-throttled for its first seconds after a cold start,
+# which is exactly when a whole handshake-plus-round-trip most often overran the
+# old flat 5s budget and dropped the mail on the floor.
+_CONNECT_TIMEOUT = 5.0
+_READ_TIMEOUT = 15.0
+
+# Bounded on purpose. Each retry pins a threadpool worker for the backoff, and
+# the free instance can be culled mid-flight anyway, so this buys resilience
+# against a blip and nothing more. Worst case is ~4s of sleeping.
+_MAX_ATTEMPTS = 3
+_BACKOFF_SECONDS = (1.0, 3.0)
+
+# Retried because they say "not now". Everything else 4xx says "not ever" — a
+# bad key, an unverified sender, a recipient the account isn't allowed to mail —
+# and repeating those just burns quota and hides the real answer.
+_RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 
 @dataclass(frozen=True)
@@ -34,6 +52,42 @@ class EmailMessage:
     subject: str
     text: str
     html: str
+
+
+class SendFailed(Exception):
+    """A provider rejection, reduced at the boundary to what is safe to log.
+
+    Resend's error bodies quote the payload back — the 403 for an unverified
+    domain names the recipient address in its ``message``. So only the status and
+    the machine-readable ``name`` survive this far; the prose never does.
+    """
+
+    def __init__(self, status_code: int, error_name: str) -> None:
+        super().__init__(f"{status_code} {error_name}")
+        self.status_code = status_code
+        self.error_name = error_name
+
+
+# One pooled client for the process, built on first use rather than at import.
+# `httpx.post` opens a fresh TCP connection and negotiates TLS on every single
+# call; on a sleepy free instance that handshake was a large share of the budget
+# it then blew. Keep-alive makes the second email of a session dramatically
+# cheaper than the first. No settings are read here, so this is not the
+# import-time freeze CLAUDE.md warns about — it is the same deliberate exception
+# as the engine in app/db.py.
+_client_lock = threading.Lock()
+_client: httpx.Client | None = None
+
+
+def _http_client() -> httpx.Client:
+    global _client
+    with _client_lock:
+        if _client is None:
+            _client = httpx.Client(
+                timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT),
+                limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+            )
+        return _client
 
 
 class EmailSender(Protocol):
@@ -94,24 +148,67 @@ class ResendSender:
         self._sender = sender
 
     def send(self, message: EmailMessage) -> None:
-        response = httpx.post(
-            self._URL,
-            timeout=_TIMEOUT_SECONDS,
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            content=json.dumps(
-                {
-                    "from": self._sender,
-                    "to": [message.to],
-                    "subject": message.subject,
-                    "text": message.text,
-                    "html": message.html,
-                }
-            ),
+        """Deliver, retrying only what is worth retrying.
+
+        A retry can duplicate an email — the request may have succeeded server
+        side and lost the response — and that is deliberately harmless here: the
+        code is minted once per *send*, not per attempt, so both copies carry the
+        same digits and either one works. A missing email is the failure that
+        matters; a duplicate is not.
+        """
+        payload = json.dumps(
+            {
+                "from": self._sender,
+                "to": [message.to],
+                "subject": message.subject,
+                "text": message.text,
+                "html": message.html,
+            }
         )
-        response.raise_for_status()
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+        last: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = _http_client().post(self._URL, headers=headers, content=payload)
+            except httpx.TransportError as exc:
+                # Timeouts, resets, DNS — all transient by nature, all worth
+                # another go. TransportError covers TimeoutException too.
+                last = exc
+            else:
+                if response.status_code < 400:
+                    return
+                failure = SendFailed(response.status_code, _error_name(response))
+                if response.status_code not in _RETRYABLE_STATUS:
+                    raise failure
+                last = failure
+
+            if attempt < _MAX_ATTEMPTS - 1:
+                time.sleep(_BACKOFF_SECONDS[attempt])
+
+        assert last is not None  # the loop cannot exit without setting it
+        raise last
+
+
+def _error_name(response: httpx.Response) -> str:
+    """The provider's machine-readable error label, and nothing else.
+
+    Never returns the ``message`` field. Resend puts the recipient address in it
+    ("You can only send testing emails to your own email address"), and an
+    address in the log is the one thing this module refuses to write.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return "unparseable"
+    if isinstance(body, dict):
+        name = body.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return "unknown"
 
 
 def get_sender() -> EmailSender:
