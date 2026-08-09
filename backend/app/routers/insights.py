@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import datetime as dt
 from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.deps import CurrentUser, DbSession
+from app.deps import CurrentUser, DbSession, Today
 from app.schemas import (
     BurnRateOut,
     CategoryMoMOut,
@@ -30,9 +29,9 @@ router = APIRouter(prefix="/insights", tags=["insights"])
 def summary(
     user: CurrentUser,
     db: DbSession,
+    today: Today,
     month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
 ) -> InsightsSummaryOut:
-    today = dt.date.today()
     month_start = parse_month(month, today=today)
 
     safe = safe_to_spend(db, user.id, user.monthly_income_cents, month_start)

@@ -46,6 +46,11 @@ class User(UUIDPk, Timestamped, Base):
     # exists to anyone who asked.
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, server_default="EUR")
+    # IANA name, e.g. "Europe/Helsinki". NULL means they have never told us, which is
+    # deliberately not the same as being in UTC — reads fall back to UTC either way, but
+    # only NULL says we are entitled to ask. Validated on write in `UserUpdate`; a value
+    # the tz database no longer recognises degrades to UTC rather than raising.
+    timezone: Mapped[str | None] = mapped_column(Text, nullable=True)
     monthly_income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # NULL means unverified, and unverified means no session is ever issued — the
     # gate is that a token doesn't exist yet, not a check on each request. A

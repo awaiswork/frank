@@ -102,9 +102,17 @@ export function useParseNl() {
 export function useUpdateMe() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: { monthly_income_cents?: number; currency?: string }) =>
-      apiFetch<User>('/me', { method: 'PATCH', body: json(body) }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['insights'] }),
+    mutationFn: (body: {
+      monthly_income_cents?: number;
+      currency?: string;
+      timezone?: string | null;
+    }) => apiFetch<User>('/me', { method: 'PATCH', body: json(body) }),
+    // Every one of these changes a number the server derives, not just a profile field:
+    // income moves safe-to-spend, and timezone moves what day the server thinks it is —
+    // which re-dates the note, the streak, the pace marker and the burn window. Only
+    // ['insights'] used to be invalidated, so the daily note kept its hour-long cache
+    // and sat there contradicting the figure above it.
+    onSuccess: () => invalidateMoney(client),
   });
 }
 

@@ -11,6 +11,8 @@ export interface User {
   id: string;
   email: string;
   currency: string;
+  /** IANA name. null means never set — the server reads dates as UTC until it is. */
+  timezone: string | null;
   monthly_income_cents: number | null;
   /** Verification is a soft gate — false means "show the banner", never "block". */
   email_verified: boolean;

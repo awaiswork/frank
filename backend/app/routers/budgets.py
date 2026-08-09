@@ -6,7 +6,6 @@ upserts a limit for a month. Every query is scoped to the authenticated user.
 
 from __future__ import annotations
 
-import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -14,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession
+from app.deps import CurrentUser, DbSession, Today
 from app.models import Budget, Category
 from app.schemas import BudgetActualOut, BudgetUpsertIn
 from app.services.aggregates import budget_vs_actual, parse_month
@@ -33,9 +32,8 @@ def _owned_category(db: Session, user_id: uuid.UUID, category_id: uuid.UUID) -> 
 
 @router.get("", response_model=list[BudgetActualOut])
 def list_budgets(
-    user: CurrentUser, db: DbSession, month: MonthParam = None
+    user: CurrentUser, db: DbSession, today: Today, month: MonthParam = None
 ) -> list[BudgetActualOut]:
-    today = dt.date.today()
     month_start = parse_month(month, today=today)
     rows = budget_vs_actual(db, user.id, month_start, today=today)
     return [BudgetActualOut.model_validate(row) for row in rows]
@@ -47,9 +45,9 @@ def upsert_budget(
     body: BudgetUpsertIn,
     user: CurrentUser,
     db: DbSession,
+    today: Today,
     month: MonthParam = None,
 ) -> BudgetActualOut:
-    today = dt.date.today()
     month_start = parse_month(month, today=today)
     _owned_category(db, user.id, category_id)
 

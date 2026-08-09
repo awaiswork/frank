@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -10,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession
+from app.deps import CurrentUser, DbSession, Today
 from app.models import Category, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
 from app.services.aggregates import month_bounds, parse_month
@@ -40,6 +39,7 @@ def _require_owned_category(db: Session, user_id: uuid.UUID, category_id: uuid.U
 def list_transactions(
     user: CurrentUser,
     db: DbSession,
+    today: Today,
     month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
     category_id: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
@@ -47,7 +47,7 @@ def list_transactions(
 ) -> list[Transaction]:
     stmt = select(Transaction).where(Transaction.user_id == user.id)
     if month is not None:
-        start, end = month_bounds(parse_month(month, today=dt.date.today()))
+        start, end = month_bounds(parse_month(month, today=today))
         stmt = stmt.where(Transaction.occurred_on >= start, Transaction.occurred_on < end)
     if category_id is not None:
         stmt = stmt.where(Transaction.category_id == category_id)

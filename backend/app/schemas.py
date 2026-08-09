@@ -5,8 +5,9 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 Kind = Literal["expense", "income"]
 
@@ -75,13 +76,33 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
     currency: str
+    timezone: str | None
     monthly_income_cents: int | None
     email_verified: bool
 
 
 class UserUpdate(BaseModel):
     currency: str | None = Field(default=None, min_length=3, max_length=3)
+    timezone: str | None = Field(default=None, max_length=64)
     monthly_income_cents: int | None = Field(default=None, ge=0)
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, v: str | None) -> str | None:
+        """Reject anything the tz database doesn't know.
+
+        The write edge is the only place this can be checked — Postgres cannot express
+        "is a valid IANA name" as a CHECK. Reads deliberately do not validate, so a name
+        that is retired from the tz database later degrades to UTC instead of failing
+        every request the user makes.
+        """
+        if v is None:
+            return None
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Unknown timezone") from exc
+        return v
 
 
 class CategoryOut(BaseModel):

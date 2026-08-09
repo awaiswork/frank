@@ -27,7 +27,7 @@ for review → approve → implement → diff → review → tests → stop.
 | Phase | Scope | Size | Status |
 | --- | --- | --- | --- |
 | 0a | Foundations — period helpers, schema-drift test, two bug fixes | S | **Done** |
-| 0b | Per-user timezone | S | Not started |
+| 0b | Per-user timezone | S | **Done** |
 | 1 | Accounts (no transfers) | M | Not started |
 | 2 | Transfers + refunds | M | Not started |
 | 3 | IOUs / informal lending | S | Not started |
@@ -132,18 +132,38 @@ benefit.
 
 ---
 
-### Phase 0b — Per-user timezone · S
+### Phase 0b — Per-user timezone · S · **done**
 
-Add `users.timezone` (IANA, nullable → UTC behaviour) and thread a `today_for(user)`
-helper through the eight `dt.date.today()` call sites, which currently decide the daily
-note's date, the streak, the burn window and the default period from *server*-local
-midnight.
+`users.timezone` (IANA, nullable) plus `today_in(tz, *, now=None)` and the `Today`
+FastAPI dependency in `app/deps.py`. **No router calls `dt.date.today()` any more** —
+all eight sites take `Today`, which resolves the user's zone. A Settings picker writes
+it, seeded from `Intl.supportedValuesOf('timeZone')` with the device zone detected.
 
 Split out of Phase 0a because it is the only part needing a migration and it changes
-what "today" means for anyone off UTC — a behaviour change that shouldn't ride along
-with a risk-free refactor. Nothing before Phase 6 requires it.
+what "today" means — a behaviour change that shouldn't ride along with a risk-free
+refactor.
 
-*Schema:* one migration — `users.timezone`.
+*Schema:* migration `0006`, one nullable column. Round-trips (`downgrade` → `upgrade`)
+with the drift test still clean. No new dependency: verified `zoneinfo` resolves all 599
+zones inside the real `python3.12-bookworm-slim` image, so no `tzdata` package is needed.
+
+**Nullable rather than `NOT NULL DEFAULT 'UTC'`,** against the `currency` precedent: UTC
+is a fallback, not an answer, so NULL has to keep meaning "never told us" — Phase 6 needs
+that difference to know whether it can pick a send hour or must ask.
+
+Two things worth remembering:
+
+- **Production behaviour is unchanged; local dev behaviour is not.** The container runs
+  UTC and NULL reads as UTC, so no deployed user sees a different date. But `date.today()`
+  used to be *server-local*, so a developer machine off UTC now matches production
+  instead of quietly disagreeing with it. A test asserting against `date.today()` caught
+  exactly this.
+- **`useUpdateMe` now invalidates via `invalidateMoney`,** not just `['insights']`. It had
+  to: the daily note holds an hour-long `staleTime`, so a timezone (or income) change left
+  it on screen contradicting the figure above it.
+
+Accepted, not compensated for: changing zone can repeat a `daily_notes` date (the unique
+constraint absorbs it) or skip one, breaking a streak. Rare and self-healing.
 
 ---
 
