@@ -114,6 +114,10 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
     [accounts.data],
   );
 
+  // Money leaves an account on an expense and lands in one on income. Saying "from"
+  // both ways would be wrong, and this is the wording transfers will extend.
+  const preposition = kind === 'income' ? 'to' : 'from';
+
   // Derived rather than seeded in an effect: the accounts arrive after first paint,
   // and an effect that writes state would render one frame with nothing selected.
   // null here means the user has no accounts at all, which stays a valid way to log.
@@ -271,28 +275,43 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
                 <span className="num text-[30px] font-medium text-muted">€</span>
               </div>
 
-              {/* Which account it came out of. Hidden entirely when there are none,
-                  so someone who has never opened one sees exactly what they saw before. */}
+              {/* Where the money moved, read as part of the amount rather than as a
+                  second row of pills.
+
+                  Account and category are not the same kind of choice. The category
+                  changes almost every time; the account almost never does, and the last
+                  one is remembered anyway. Giving them matching chip rows implied they
+                  were equal weight, and left two unlabelled rows of pills separated only
+                  by the category dots — legible with three accounts, not with eight.
+                  Sitting under the figure it reads as a sentence ("23,50 € from
+                  Everyday"), takes one line instead of a wrapping row, and scales to any
+                  number of accounts because the list is inside the control.
+
+                  The preposition follows the direction, which is also the honest word:
+                  money leaves an account on an expense and lands in one on income. */}
               {openAccounts.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-4 pb-4">
-                  {openAccounts.map((a) => {
-                    const on = accountId === a.id;
-                    return (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => setPickedAccount(a.id)}
-                        aria-pressed={on}
-                        className={`rounded-full border px-3 py-2 text-[13.5px] font-medium transition-colors ${
-                          on
-                            ? 'border-ink bg-ink text-paper'
-                            : 'border-line-2 text-ink-2 hover:text-ink'
-                        }`}
+                <div className="flex justify-center px-4 pb-4">
+                  {openAccounts.length === 1 ? (
+                    <span className="text-[13px] text-muted">
+                      {preposition} <span className="text-ink-2">{openAccounts[0].name}</span>
+                    </span>
+                  ) : (
+                    <label className="flex items-center gap-2 text-[13px] text-muted">
+                      {preposition}
+                      <select
+                        value={accountId ?? ''}
+                        onChange={(e) => setPickedAccount(e.target.value)}
+                        aria-label="Account"
+                        className="h-9 rounded-input border border-line-2 bg-field px-2.5 text-[13px] text-ink-2 focus:outline-none"
                       >
-                        {a.name}
-                      </button>
-                    );
-                  })}
+                        {openAccounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
               )}
 

@@ -55,6 +55,27 @@ function dialog() {
   return document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
 }
 
+function account() {
+  return document.querySelector<HTMLSelectElement>('select[aria-label="Account"]');
+}
+
+/** The word before the account. Its own text node, so this can't pass on a stray
+ *  "to" somewhere else in the sheet. */
+function preposition() {
+  return account()?.closest('label')?.childNodes[0]?.textContent?.trim() ?? null;
+}
+
+function kindButton(kind: 'expense' | 'income') {
+  return [...document.querySelectorAll('button')].find(
+    (b) => b.textContent?.trim().toLowerCase() === kind,
+  );
+}
+
+const TWO = [
+  { id: 'a1', name: 'Everyday', archived_at: null },
+  { id: 'a2', name: 'Savings', archived_at: null },
+];
+
 describe('QuickAdd', () => {
   it('renders onto <body>, not into the tree that mounted it', () => {
     render(<QuickAdd open onClose={() => {}} />);
@@ -108,11 +129,20 @@ describe('QuickAdd', () => {
     expect(amount()?.value).toBe('');
   });
 
-  it('shows no account picker for someone who has none', () => {
-    // The whole point of nullable account_id: an app with no accounts logs exactly
+  it('shows nothing about accounts to someone who has none', () => {
+    // The whole point of a nullable account_id: an app with no accounts logs exactly
     // the way it always did.
     render(<QuickAdd open onClose={() => {}} />);
-    expect(document.querySelector('[aria-pressed]')).toBeNull();
+    expect(account()).toBeNull();
+    expect(document.body.textContent).not.toMatch(/\bfrom\b/);
+  });
+
+  it('states the single account rather than offering a choice of one', () => {
+    accounts = [{ id: 'a1', name: 'Everyday', archived_at: null }];
+    render(<QuickAdd open onClose={() => {}} />);
+
+    expect(account()).toBeNull(); // no control — there is nothing to pick
+    expect(document.body.textContent).toContain('Everyday');
   });
 
   it('opens on the account used last on this device, not just the first', () => {
@@ -123,20 +153,25 @@ describe('QuickAdd', () => {
     localStorage.setItem('frankly-last-account:u1', 'a2');
 
     render(<QuickAdd open onClose={() => {}} />);
-    const pressed = [...document.querySelectorAll('[aria-pressed="true"]')].map(
-      (el) => el.textContent,
-    );
-    expect(pressed).toEqual(['Savings']);
+    expect(account()?.value).toBe('a2');
   });
 
-  it('ignores a remembered account that has since been archived', () => {
-    accounts = [{ id: 'a1', name: 'Everyday', archived_at: null }];
-    localStorage.setItem('frankly-last-account:u1', 'gone');
+  it('ignores a remembered account that is no longer selectable', () => {
+    accounts = [{ id: 'a1', name: 'Everyday', archived_at: null }, ...TWO.slice(1)];
+    localStorage.setItem('frankly-last-account:u1', 'archived-or-deleted');
 
     render(<QuickAdd open onClose={() => {}} />);
-    const pressed = [...document.querySelectorAll('[aria-pressed="true"]')].map(
-      (el) => el.textContent,
-    );
-    expect(pressed).toEqual(['Everyday']);
+    // Falls back to the first rather than to a stale id the server would reject.
+    expect(account()?.value).toBe('a1');
+  });
+
+  it('says money leaves an account but lands in one', () => {
+    // "from" both ways would be wrong, and this is the wording transfers extend.
+    accounts = [...TWO];
+    render(<QuickAdd open onClose={() => {}} />);
+    expect(preposition()).toBe('from');
+
+    fireEvent.click(kindButton('income')!);
+    expect(preposition()).toBe('to');
   });
 });
