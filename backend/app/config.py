@@ -76,8 +76,8 @@ class Settings(BaseSettings):
     # whose order is incidental (Vercel previews), and a link is not something to
     # build out of a list by luck. Falls back to the first origin when unset.
     public_app_url: str = ""
-    # "lax" when the app and API share a registrable domain (frankly.app +
-    # api.frankly.app). Cross-site hosts (*.vercel.app → *.onrender.com) need
+    # "lax" when the app and API share a registrable domain (askfrankly.app +
+    # api.askfrankly.app). Cross-site hosts (*.vercel.app → *.onrender.com) need
     # "none", or the browser drops the refresh cookie and every reload signs the
     # user out.
     cookie_samesite: Literal["lax", "none"] = "lax"

@@ -53,3 +53,30 @@ services:
       # Prompted on first deploy: the Vercel URL(s), comma-separated.
       - key: FRONTEND_ORIGIN
         sync: false
+      # Transactional email — the signup and password-reset codes.
+      #
+      # All three were set by hand on Render and declared nowhere, which is how
+      # EMAIL_FROM sat on the shared throwaway sender for a whole release without
+      # anyone noticing: no diff ever showed it. Config that cannot be read in a
+      # review is config nobody reviews, so it lives here now.
+      - key: EMAIL_PROVIDER
+        value: resend
+      # Set in the dashboard, not here — it is a secret. `sync: false` means the
+      # blueprint leaves the existing value alone. Without a key the app logs
+      # `email_disabled` at boot and degrades to the console sender rather than
+      # refusing to serve budgets and transactions too.
+      - key: EMAIL_API_KEY
+        sync: false
+      # The setting that decides who can RECEIVE mail, not just what the From
+      # header reads — and the one that was wrong in production.
+      #
+      # It was `Frankly <onboarding@resend.dev>`, Resend's shared sender. That
+      # needs no domain, but it delivers ONLY to the address on our own Resend
+      # account and refuses every other recipient with 403 validation_error. So
+      # signup worked for the person testing it and silently failed for everyone
+      # else, which is the worst shape a bug can take.
+      #
+      # askfrankly.app is verified in Resend (eu-west-1, matching Render
+      # frankfurt and Neon eu-central-1). Do not put the resend.dev sender back.
+      - key: EMAIL_FROM
+        value: "Frankly <noreply@askfrankly.app>"
