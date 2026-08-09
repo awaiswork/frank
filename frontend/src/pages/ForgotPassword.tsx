@@ -23,11 +23,18 @@ export function ForgotPassword() {
     setBusy(true);
     setError(null);
     try {
-      await forgotPassword(email);
+      const sent = await forgotPassword(email);
       // Straight to the code screen. The wording there is deliberately
       // conditional ("if that address has an account") because this endpoint
       // will not say whether it does.
-      void navigate('/verify', { state: { email, purpose: 'reset' } });
+      //
+      // `retryAfter` is the cooldown that has just started, so the code screen
+      // can wait it out rather than offering a resend the server will decline
+      // in silence. It is a constant the server returns either way, so carrying
+      // it says nothing about whether the address exists.
+      void navigate('/verify', {
+        state: { email, purpose: 'reset', retryAfter: sent.retry_after_seconds },
+      });
     } catch {
       // Only a transport or throttling failure can land here.
       setError("I couldn't reach the server. Try again in a moment.");

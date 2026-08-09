@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import type { User } from '../api/types';
+import type { AuthMessage, User } from '../api/types';
 
 /**
  * 'anon' and 'unreachable' are deliberately separate. 'anon' means the API told
@@ -20,8 +20,12 @@ export interface AuthContextValue {
   /**
    * Create the account. Resolves with no session: registration proves nothing
    * about the address, so the caller sends the user to the code screen.
+   *
+   * Resolves with the server's message rather than void, because it carries
+   * `retry_after_seconds` — the code screen needs it to know a code has just
+   * gone out, and therefore that its resend button must not offer another yet.
    */
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<AuthMessage>;
   /** Redeem a signup code. This is where an email account's session begins. */
   verify: (email: string, code: string) => Promise<void>;
   logout: () => void;
