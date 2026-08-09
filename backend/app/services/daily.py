@@ -9,7 +9,6 @@ if the model call fails, so the home screen never breaks.
 
 from __future__ import annotations
 
-import calendar
 import datetime as dt
 import json
 import uuid
@@ -21,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models import DailyNote
 from app.services import llm
+from app.services.aggregates import days_in_period, parse_month
 
 DAILY_MODEL = "claude-sonnet-4-6"
 DAILY_TOOL_NAME = "daily_note"
@@ -57,8 +57,8 @@ def compute_mood(context: dict[str, Any], today: dt.date) -> Mood:
         return "over"
 
     burn = context.get("daily_burn_eur") or 0
-    days_in_month = calendar.monthrange(today.year, today.month)[1]
-    days_left = max(days_in_month - today.day, 0)
+    # Days still to come, today excluded — today's spend is already inside the burn rate.
+    days_left = max(days_in_period(parse_month(None, today=today)) - today.day, 0)
     projected_spend = burn * days_left
     budgets = context.get("budgets") or []
     running_hot = any(not b.get("on_track", True) for b in budgets)

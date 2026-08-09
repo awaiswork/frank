@@ -19,7 +19,12 @@ from sqlalchemy.orm import Session
 
 from app.models import AdviceRequest, GoalContribution, SavingsGoal, User
 from app.services import llm
-from app.services.aggregates import budget_vs_actual, daily_burn_rate, safe_to_spend
+from app.services.aggregates import (
+    budget_vs_actual,
+    daily_burn_rate,
+    parse_month,
+    safe_to_spend,
+)
 
 ADVISOR_MODEL = "claude-sonnet-4-6"
 TOOL_NAME = "give_verdict"
@@ -50,7 +55,7 @@ def _eur(cents: int) -> float:
 
 def build_context(db: Session, user: User, today: dt.date) -> dict[str, Any]:
     """Compact aggregates for the model — the §7c context (also the stored snapshot)."""
-    month_start = today.replace(day=1)
+    month_start = parse_month(None, today=today)
 
     budgets = budget_vs_actual(db, user.id, month_start, today=today)
     sts = safe_to_spend(db, user.id, user.monthly_income_cents, month_start)

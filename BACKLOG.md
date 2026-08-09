@@ -26,7 +26,8 @@ for review → approve → implement → diff → review → tests → stop.
 
 | Phase | Scope | Size | Status |
 | --- | --- | --- | --- |
-| 0 | Foundations — month math, schema-drift test, per-user timezone | S | Not started |
+| 0a | Foundations — period helpers, schema-drift test, two bug fixes | S | **Done** |
+| 0b | Per-user timezone | S | Not started |
 | 1 | Accounts (no transfers) | M | Not started |
 | 2 | Transfers + refunds | M | Not started |
 | 3 | IOUs / informal lending | S | Not started |
@@ -93,30 +94,56 @@ becomes a route.
 
 ## 4. Phases
 
-### Phase 0 — Foundations · S · no user-visible change
+### Phase 0a — Foundations · S · **done**
 
-The safety net everything else lands on.
+The safety net everything else lands on. **No migration** — see the correction below.
 
-- Collapse the six month-arithmetic implementations into `aggregates.month_bounds` /
-  `parse_month`. Remove `transactions._month_range` and the inline variants in
-  `services/advisor.py` and `services/daily.py`. Re-document `Budget.month` as *period
-  start* (door 6).
-- **Schema-drift test.** Run `alembic upgrade head` against a scratch database, compare
-  against `Base.metadata` via autogenerate, assert an empty diff. Today tests build the
-  schema from `Base.metadata.create_all` while CI only proves migrations *apply* —
-  nothing proves the two agree, and `savings_goals.archived_at` is the existing proof
-  that gap is real. This roadmap pushes roughly eight migrations through it.
-- Add `users.timezone` (IANA, nullable → UTC behaviour). Thread a `today_for(user)`
-  helper through the eight `dt.date.today()` call sites.
-- Fix the one-line pre-existing bugs: archived goals leaking into `safe_to_spend`, and
-  the `archived_at` ORM/migration type drift.
+- All period arithmetic now comes from `aggregates.month_bounds` / `parse_month` /
+  `days_in_period`. Removed `transactions._month_range` and the inline variants in
+  `services/advisor.py` and `services/daily.py`. `Budget.month` is documented as
+  *period start* (door 6), and `days_in_period` derives from `month_bounds` rather than
+  the calendar, so re-anchoring periods stays a one-helper change.
+- **`tests/test_schema_drift.py`** — runs the real migration chain against its own
+  scratch database and autogenerates against `Base.metadata`, asserting an empty diff.
+  Verified to fail on real drift, not merely to pass.
+- Fixed archived goals leaking into `safe_to_spend`.
+- Fixed the `savings_goals.archived_at` ORM/migration divergence.
 
-*Schema:* one migration — `users.timezone`, `savings_goals.archived_at` type fix.
-*Risk:* low. *Why first:* every later phase adds migrations and month math. The drift
-test is the highest-leverage single item in the roadmap.
+**Correction to the original plan:** this was recorded as needing a migration. It did
+not. Migration `0001` created `archived_at` as `timestamptz` correctly; the *model*
+passed no type to `mapped_column` and inferred a naive `DateTime()` from its annotation.
+The database was right and the ORM was wrong, so the fix is one type annotation. Which
+is exactly the divergence the drift test exists to catch — tests build from the metadata,
+production builds from the migrations, and nothing compared them.
+
+*Risk:* low, and lower than planned with no migration involved. *Why first:* every later
+phase adds migrations and period math.
+
+Two behaviour changes, both covered by tests that were confirmed to fail beforehand:
+safe-to-spend rises for anyone with an archived goal funded this month; and `days_left`
+in `compute_mood` still excludes today (today's spend is already inside the burn rate) —
+now pinned, because the natural rewrite of that arithmetic counts today twice and flips
+moods from `go` to `wait`.
 
 Deliberately **not** here: budget roll-forward. It is a real bug (see §6) but a product
-decision, not a refactor.
+decision, not a refactor. Also left alone: `seed_demo.py`'s three month helpers — a
+standalone script with no runtime path and no coverage, so touching it is risk without
+benefit.
+
+---
+
+### Phase 0b — Per-user timezone · S
+
+Add `users.timezone` (IANA, nullable → UTC behaviour) and thread a `today_for(user)`
+helper through the eight `dt.date.today()` call sites, which currently decide the daily
+note's date, the streak, the burn window and the default period from *server*-local
+midnight.
+
+Split out of Phase 0a because it is the only part needing a migration and it changes
+what "today" means for anyone off UTC — a behaviour change that shouldn't ride along
+with a risk-free refactor. Nothing before Phase 6 requires it.
+
+*Schema:* one migration — `users.timezone`.
 
 ---
 
@@ -363,12 +390,12 @@ Independent of this expansion, but several get worse once accounts exist.
 | --- | --- | --- |
 | Goal contributions are structurally double-countable | A contribution writes a `goal_contributions` row and **no transaction**, yet `safe_to_spend` subtracts `goal_contributions_cents`. Log the real bank transfer as an expense too and the same money is subtracted twice. | Phase 2 |
 | Budgets do not roll forward | Nothing copies limits into a new month and `budget_vs_actual` matches `Budget.month` exactly, so on the 1st `remaining_budgets_cents` sums zero rows and **safe-to-spend jumps by the entire previous month's unspent allowance**. A live honesty bug on the hero number. | Unscheduled — needs a product decision (copy last month? prompt?) |
-| Archived goals leak into safe-to-spend | `aggregates.safe_to_spend`'s goal term filters only `user_id` and the date window. Every other goal query excludes archived. | Phase 0 |
+| Archived goals leak into safe-to-spend | `aggregates.safe_to_spend`'s goal term filters only `user_id` and the date window. Every other goal query excludes archived. | Phase 0a |
 | Month-over-month `LAG` is not calendar-aware | `LAG` orders over *rows that exist*, so "previous month" means "the previous month that had spend in that category". A gap month produces a misleading delta. | Unscheduled |
-| `savings_goals.archived_at` ORM/migration drift | The model passes no type and infers naive `DateTime()`; the migration created `timestamptz`. Tests build from ORM metadata, production from migrations, so the two disagree. | Phase 0 |
-| Month arithmetic implemented six times | `aggregates.month_bounds`, `transactions._month_range`, `advisor.py`, `daily.py`, `_elapsed_fraction`, and three more in `seed_demo.py`. The frontend has its own in `lib/date.ts`, mixing UTC and local. | Phase 0 |
-| No per-user timezone | `dt.date.today()` is server-local in eight places and decides the daily note's date, the streak, the burn window and the default month. | Phase 0 |
-| Migrations are never proven to match the models | Tests build the schema from `Base.metadata.create_all`; CI separately proves migrations *apply*. Nothing checks they agree. | Phase 0 |
+| `savings_goals.archived_at` ORM/migration drift | The model passes no type and infers naive `DateTime()`; the migration created `timestamptz`. Tests build from ORM metadata, production from migrations, so the two disagree. | Phase 0a |
+| Month arithmetic implemented six times | `aggregates.month_bounds`, `transactions._month_range`, `advisor.py`, `daily.py`, `_elapsed_fraction`, and three more in `seed_demo.py`. The frontend has its own in `lib/date.ts`, mixing UTC and local. | Phase 0a for every runtime path. `seed_demo.py` (standalone script, no coverage) and the frontend's `lib/date.ts` are still separate — unscheduled. |
+| No per-user timezone | `dt.date.today()` is server-local in eight places and decides the daily note's date, the streak, the burn window and the default month. | Phase 0b |
+| Migrations are never proven to match the models | Tests build the schema from `Base.metadata.create_all`; CI separately proves migrations *apply*. Nothing checks they agree. | Phase 0a |
 
 ---
 

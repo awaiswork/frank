@@ -13,17 +13,11 @@ from sqlalchemy.orm import Session
 from app.deps import CurrentUser, DbSession
 from app.models import Category, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
+from app.services.aggregates import month_bounds, parse_month
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 PAGE_SIZE = 50
-
-
-def _month_range(month: str) -> tuple[dt.date, dt.date]:
-    year, mon = (int(part) for part in month.split("-"))
-    start = dt.date(year, mon, 1)
-    end = dt.date(year + 1, 1, 1) if mon == 12 else dt.date(year, mon + 1, 1)
-    return start, end
 
 
 def _owned_transaction(db: Session, user_id: uuid.UUID, tx_id: uuid.UUID) -> Transaction:
@@ -53,7 +47,7 @@ def list_transactions(
 ) -> list[Transaction]:
     stmt = select(Transaction).where(Transaction.user_id == user.id)
     if month is not None:
-        start, end = _month_range(month)
+        start, end = month_bounds(parse_month(month, today=dt.date.today()))
         stmt = stmt.where(Transaction.occurred_on >= start, Transaction.occurred_on < end)
     if category_id is not None:
         stmt = stmt.where(Transaction.category_id == category_id)

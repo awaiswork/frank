@@ -260,7 +260,12 @@ class Budget(UUIDPk, Timestamped, Base):
     category_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE"), nullable=False
     )
-    month: Mapped[dt.date] = mapped_column(Date, nullable=False)  # always first of month
+    # The *start of the budgeting period*, which today is always the first of a calendar
+    # month. Read it as a period id rather than as "a month": every boundary in the app
+    # comes from ``aggregates.month_bounds``, so anchoring periods elsewhere (a payday
+    # month, 25th to 24th) stays a change to that one helper instead of a migration
+    # against the rows stored here and the unique constraint over them.
+    month: Mapped[dt.date] = mapped_column(Date, nullable=False)
     limit_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
     __table_args__ = (
@@ -278,7 +283,12 @@ class SavingsGoal(UUIDPk, Timestamped, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     target_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     due_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
-    archived_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    # Explicitly tz-aware. Left implicit, SQLAlchemy infers a naive DateTime() from the
+    # annotation, which is *not* what migration 0001 created (timestamptz) — and since
+    # tests build their schema from this metadata while production builds it from the
+    # migrations, the two disagreed silently. `test_schema_drift` now catches that class
+    # of divergence; this column was the one that proved it was possible.
+    archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class GoalContribution(UUIDPk, Timestamped, Base):
