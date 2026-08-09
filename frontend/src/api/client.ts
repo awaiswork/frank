@@ -161,6 +161,36 @@ async function runRefresh(timeoutMs: number): Promise<RefreshResult> {
   }
 }
 
+/**
+ * Knock on the API until it answers, then resolve. Never rejects.
+ *
+ * Only needed before a *top-level navigation* to the API — Google sign-in. Every
+ * other slow call happens with the app still on screen, where `ProtectedRoute`
+ * and `AuthCallback` can say "waking the server up" and be believed. A link to a
+ * sleeping instance has no such luxury: the browser leaves the app immediately,
+ * paints nothing, and a Render cold start is 30–60 seconds of blank white page
+ * on a domain the user has never heard of. That reads as a broken button, not as
+ * waiting, and it is why the button appeared not to work at all.
+ *
+ * `/healthz` is the right door to knock on precisely because it touches no
+ * database (CLAUDE.md keeps it that way): it answers as soon as the instance is
+ * up, instead of also waiting for Neon to wake behind it.
+ *
+ * Failure is deliberately not propagated. A ping that times out is no reason to
+ * refuse to navigate — the server may answer the navigation anyway, and
+ * stranding someone on the sign-in screen is worse than letting them wait on
+ * Google's.
+ */
+export async function warmApi(timeoutMs = BOOTSTRAP_TIMEOUT_MS): Promise<void> {
+  try {
+    await withDeadline(timeoutMs, null, (signal) =>
+      fetch(`${API_URL}/healthz`, { signal, cache: 'no-store' }),
+    );
+  } catch {
+    /* best effort; the caller navigates regardless */
+  }
+}
+
 async function toError(res: Response): Promise<ApiError> {
   let detail = res.statusText;
   try {
