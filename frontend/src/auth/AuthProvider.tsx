@@ -129,9 +129,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       // Creates the account and stops. No token exists yet, by design — the
       // caller routes to the code screen, which is where a session can start.
-      register: async (email, password) => {
-        await registerAccount(email, password);
-      },
+      // The message is passed back rather than swallowed: it says how long
+      // until another code may be sent, and the code screen has to honour that.
+      register: (email, password) => registerAccount(email, password),
       verify: async (email, code) => adopt(await verifyCode(email, code)),
       // Tell the server first. The refresh cookie is httpOnly, so clearing
       // client state alone would leave a working credential in the jar — which

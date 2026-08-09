@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { resendCode } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/useAuth';
 import { GoogleButton } from '../components/GoogleButton';
@@ -37,7 +38,19 @@ export function Login() {
       // 403 is not a failure to show — it means the password was right and the
       // address still needs proving. Send them to the code screen instead.
       if (err instanceof ApiError && err.status === 403) {
-        void navigate('/verify', { state: { email, purpose: 'verify' } });
+        // Ask for the code here, because /auth/login deliberately doesn't send
+        // one: it raises, and a background task attached to a raised response is
+        // discarded silently. Without this the code screen announced "I've sent
+        // a six-digit code to you" over an inbox where nothing had been sent.
+        let retryAfter: number | null = null;
+        try {
+          retryAfter = (await resendCode(email, 'verify')).retry_after_seconds;
+        } catch {
+          // Throttled, or the server went away between the two calls. Land on
+          // the code screen with its resend button live rather than stranding
+          // someone on the login form — that button is the recovery path.
+        }
+        void navigate('/verify', { state: { email, purpose: 'verify', retryAfter } });
         return;
       }
       setError(err instanceof ApiError ? err.message : 'Could not log in');

@@ -25,10 +25,17 @@ export function Register() {
     setError(null);
     setBusy(true);
     try {
-      await register(email, password);
+      const sent = await register(email, password);
       // No session exists yet — the address has to be proven first. The address
       // travels in router state, not the URL, so it stays out of history.
-      void navigate('/verify', { state: { email, purpose: 'verify' } });
+      //
+      // `retryAfter` travels with it because a code has *just* been sent. Without
+      // it the code screen offers "Send another code" immediately, the server
+      // silently declines while the per-user cooldown holds, and the screen says
+      // it sent one anyway.
+      void navigate('/verify', {
+        state: { email, purpose: 'verify', retryAfter: sent.retry_after_seconds },
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create account');
     } finally {

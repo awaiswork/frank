@@ -11,6 +11,17 @@ import { Button, Card, TextInput } from '../components/ui';
 interface CodeState {
   email?: string;
   purpose?: CodePurpose;
+  /**
+   * Seconds until another code may be sent, when the screen that routed here
+   * just caused one to go out. Absent means nothing was sent and the resend
+   * button should be live immediately.
+   *
+   * This exists because the server *cannot* tell us. `/auth/resend-code` answers
+   * identically whether it sent a code or declined on cooldown — that sameness is
+   * what stops the endpoint confirming an address is registered — so the honest
+   * moment to start the clock is the one send we witnessed ourselves.
+   */
+  retryAfter?: number | null;
 }
 
 const COPY = {
@@ -39,7 +50,9 @@ export function VerifyCode() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
+  // Starts held down when a code has just been sent, so the button never offers
+  // a send the server is going to decline in silence.
+  const [cooldown, setCooldown] = useState(() => state.retryAfter ?? 0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -90,7 +103,12 @@ export function VerifyCode() {
     setError(null);
     try {
       const res = await resendCode(email, purpose);
-      setNotice('Sent. It can take a minute to arrive.');
+      // The server's own sentence, not one of ours. It is written to be true
+      // whether or not the address is registered, and it cannot drift from what
+      // the endpoint actually did. This used to read "Sent. It can take a minute
+      // to arrive." — asserted by the client, and false every time the cooldown
+      // had quietly suppressed the send.
+      setNotice(res.detail);
       setCooldown(res.retry_after_seconds ?? 60);
     } catch {
       setError("I couldn't reach the server. Try again in a moment.");

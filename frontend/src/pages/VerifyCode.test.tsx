@@ -21,7 +21,7 @@ const ME = {
   email_verified: true,
 };
 
-function renderAt(state: Record<string, string> | null) {
+function renderAt(state: Record<string, string | number | null> | null) {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -167,6 +167,63 @@ describe('VerifyCode', () => {
       'disabled',
       true,
     );
+  });
+
+  describe('not offering a send that would be silently declined', () => {
+    // `/auth/resend-code` answers the same whether it sent a code or dropped it
+    // on the per-user cooldown — it has to, or the response would confirm which
+    // addresses are registered. So the screen used to offer "Send another code"
+    // straight after registration, the server declined in silence, and the
+    // screen reported success. The arriving page carries the cooldown instead.
+
+    it('starts held down when the previous screen just sent a code', () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(jsonRes(401, {}))),
+      );
+      renderAt({ email: 'a@b.co', purpose: 'verify', retryAfter: 60 });
+
+      const button = screen.getByRole('button', { name: /send another in/i });
+      expect(button).toHaveProperty('disabled', true);
+      expect(screen.queryByRole('button', { name: /send another code/i })).toBeNull();
+    });
+
+    it('starts live when nothing was sent', () => {
+      // The login route raises a 403 without sending, and the request that
+      // should have replaced it can itself be throttled. Nothing is on its way,
+      // so the one button that can fix that must not be disabled.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(jsonRes(401, {}))),
+      );
+      renderAt({ email: 'a@b.co', purpose: 'verify', retryAfter: null });
+
+      expect(screen.getByRole('button', { name: /send another code/i })).toHaveProperty(
+        'disabled',
+        false,
+      );
+    });
+
+    it('repeats what the server said rather than claiming a send of its own', async () => {
+      const neutral = "If that address has an account, I've sent a code to it.";
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) =>
+          Promise.resolve(
+            String(url).includes('/auth/resend-code')
+              ? jsonRes(200, { detail: neutral, retry_after_seconds: 60 })
+              : jsonRes(401, {}),
+          ),
+        ),
+      );
+      renderAt({ email: 'a@b.co', purpose: 'reset' });
+
+      fireEvent.click(screen.getByRole('button', { name: /send another code/i }));
+
+      await waitFor(() => expect(screen.getByText(neutral)).toBeTruthy());
+      // The old copy asserted delivery the client could not know about.
+      expect(screen.queryByText(/^Sent\./)).toBeNull();
+    });
   });
 
   it('separates an unreachable server from a rejected code', async () => {

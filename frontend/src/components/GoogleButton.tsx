@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { googleSignInUrl } from '../api/auth';
+import { warmApi } from '../api/client';
 
 /**
  * "Continue with Google", for both the sign-in and sign-up screens.
@@ -10,8 +12,43 @@ import { googleSignInUrl } from '../api/auth';
  *
  * An anchor, not a button with `fetch`. The flow is a chain of top-level
  * redirects through Google's consent screen and back, which XHR cannot follow.
+ *
+ * The click is intercepted anyway, for one reason: the destination is the API,
+ * and on the free tier the API sleeps. Following the link straight to a cold
+ * instance hands the browser a blank page on `*.onrender.com` for 30–60 seconds
+ * with nothing on it to explain the wait — the one slow path in this app that
+ * had no cold-start notice, and indistinguishable from a button that does
+ * nothing. So we wake the server *here*, where the screen still belongs to us
+ * and can say what is happening, and navigate once it answers.
+ *
+ * The `href` stays real and correct: modified clicks (new tab, new window) are
+ * left to the browser, and with JavaScript broken the link still works — badly,
+ * exactly as it did before, rather than not at all.
  */
 export function GoogleButton({ label }: { label: string }) {
+  const [waking, setWaking] = useState(false);
+  const href = googleSignInUrl();
+  // Guards a navigation firing after this screen is gone: the wake can outlive
+  // the component, and a redirect landing on whatever the user opened instead
+  // would be worse than the wait it was meant to cover.
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
+
+  async function onClick(event: MouseEvent<HTMLAnchorElement>) {
+    // Leave the browser the clicks it owns — new tab, new window, download.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (waking) return;
+    setWaking(true);
+    await warmApi();
+    if (alive.current) window.location.assign(href);
+  }
+
   return (
     <>
       <div className="mt-5 flex items-center gap-3" aria-hidden="true">
@@ -20,12 +57,27 @@ export function GoogleButton({ label }: { label: string }) {
         <span className="h-px flex-1 bg-line" />
       </div>
       <a
-        href={googleSignInUrl()}
-        className="mt-4 flex h-11 w-full items-center justify-center gap-2.5 rounded-input border border-line-2 bg-surface text-[14.5px] font-semibold text-ink-2 hover:text-ink"
+        href={href}
+        onClick={onClick}
+        aria-busy={waking}
+        className={`mt-4 flex h-11 w-full items-center justify-center gap-2.5 rounded-input border border-line-2 bg-surface text-[14.5px] font-semibold ${
+          waking ? 'text-muted' : 'text-ink-2 hover:text-ink'
+        }`}
       >
-        <GoogleMark />
-        {label}
+        {waking ? (
+          <span className="animate-spin-fast inline-block h-[15px] w-[15px] rounded-full border-2 border-line-2 border-t-ink" />
+        ) : (
+          <GoogleMark />
+        )}
+        {waking ? 'Taking you to Google…' : label}
       </a>
+      {/* Same promise the rest of the app makes about a cold start, and for the
+          same reason: a wait nobody explained is the one people read as broken. */}
+      {waking && (
+        <p role="status" className="mt-2 text-center text-[12.5px] leading-relaxed text-muted">
+          Waking the server up — this can take up to a minute.
+        </p>
+      )}
     </>
   );
 }
