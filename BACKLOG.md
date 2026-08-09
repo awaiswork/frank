@@ -28,7 +28,7 @@ for review → approve → implement → diff → review → tests → stop.
 | --- | --- | --- | --- |
 | 0a | Foundations — period helpers, schema-drift test, two bug fixes | S | **Done** |
 | 0b | Per-user timezone | S | **Done** |
-| 1 | Accounts (no transfers) | M | Not started |
+| 1 | Accounts (no transfers) | M | **Done** |
 | 2 | Transfers + refunds | M | Not started |
 | 3 | IOUs / informal lending | S | Not started |
 | 4a | Recurring — templates + materialisation | M | Not started |
@@ -167,9 +167,23 @@ constraint absorbs it) or skip one, breaking a streak. Rare and self-healing.
 
 ---
 
-### Phase 1 — Accounts · M
+### Phase 1 — Accounts · M · **done**
 
 Accounts exist, balances are real, a Wealth section shows them. No transfers yet.
+
+**Three corrections to what was planned here:**
+
+- **Reconcile moved to Phase 2.** It was recorded as widening `source`. That was wrong:
+  `source` is provenance and no aggregate reads it. An adjustment moves a balance while
+  being neither income nor expense, so it needs a **`kind`** — and it inherits exactly
+  the double-counting problem transfers have. It belongs where the conservation test
+  already guards that.
+- **`physical` and `investment` are not account types.** An account has a *ledger*
+  (entries move it); an asset has *valuations* (you state what it is worth). A car has no
+  ledger. Types are `current | savings | cash | liability`, and Phase 5 owns valued
+  things. Investments are genuinely dual-natured — contributions *and* market movement —
+  which is a decision for the phase that is about it, not one to smuggle in here.
+- **`sort_order` cut.** Ordered by type then name; a reorder UI can come later.
 
 - `accounts`: `user_id, name, type, currency CHAR(3) NOT NULL, opening_balance_cents,
   opened_on DATE, archived_at, sort_order`.
@@ -180,15 +194,25 @@ Accounts exist, balances are real, a Wealth section shows them. No transfers yet
 - Account CRUD and archive. `QuickAdd` gains an account picker with a remembered default.
 - New `/wealth` route: accounts grouped liquid / investments / physical, each with a
   balance and a total, plus a "Ledger starts <date>" line while it still matters.
-- **Reconcile:** "the real balance is X" writes an adjustment entry. `source` widens to
-  include `adjustment`.
+**The balance is the first sign-based aggregation on the server**, and so the first place
+a new kind can be silently mishandled: a `CASE … ELSE 0` contributes *nothing* for a kind
+nobody remembered, so a transfer would move no money and the balance would just be wrong.
+`services/accounts.BALANCE_SIGNS` is the single source of that CASE, and
+`test_balance_signs_cover_every_kind` reads the permitted values straight out of the
+`ck_transactions_kind` constraint. Widening that CHECK in Phase 2 fails the suite until
+someone decides what the new kind does to a balance. Verified to fail, not merely to pass.
 
-*Touches:* `models.py`, `schemas.py`, `routers/transactions.py`, new `routers/accounts.py`,
-`services/aggregates.py` (balance query only — the six spend aggregates are untouched),
-`QuickAdd.tsx`, `Transactions.tsx`, new `pages/Wealth.tsx`, `Layout.tsx`, `api/hooks.ts`.
-*Risk:* medium — first change to the transaction write path.
-*Why here:* this is the log-entry → ledger-entry semantic change. Everything downstream
-assumes it.
+*Schema:* migration `0007` — `accounts` plus a nullable `transactions.account_id` with
+`ON DELETE RESTRICT`, deliberately unlike `categories`' SET NULL: losing a category costs
+a label, losing an entry costs money out of a balance with nothing on screen to explain
+it. Purely additive, no backfill, round-trips down and up with the drift test clean.
+
+Checked in a browser rather than only in tests: Wealth and the capture picker at 320px and
+at desktop, negative balances rendering in `--over`, no console errors.
+
+**Known rough edge:** in the capture sheet the account chips and the category chips are
+two adjacent unlabelled pill rows, distinguished only by the category dots. Fine with
+three accounts; worth revisiting with more.
 
 ---
 
