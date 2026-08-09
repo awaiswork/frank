@@ -3,13 +3,21 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { QuickAdd } from './QuickAdd';
 
+// Accounts the mocked hook hands back. Mutable so a test can say "none yet".
+let accounts: { id: string; name: string; archived_at: string | null }[] = [];
+
 // The sheet only needs the shape of these, not a server.
 vi.mock('../api/hooks', () => ({
   useCategories: () => ({ data: [{ id: 'c1', name: 'Fun', kind: 'expense', color: null }] }),
   useTransactions: () => ({ data: [] }),
   useCreateTransaction: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteTransaction: () => ({ mutate: vi.fn() }),
+  useAccounts: () => ({
+    data: { accounts, total_cents: 0, ledger_starts_on: null },
+  }),
 }));
+
+vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }));
 
 beforeAll(() => {
   // jsdom has no matchMedia; the sheet asks it whether the pointer is coarse.
@@ -39,6 +47,8 @@ function mountAppRoot() {
 afterEach(() => {
   cleanup();
   document.getElementById('root')?.remove();
+  accounts = [];
+  localStorage.clear();
 });
 
 function dialog() {
@@ -96,5 +106,37 @@ describe('QuickAdd', () => {
     rerender(<QuickAdd open={false} onClose={() => {}} />);
     rerender(<QuickAdd open onClose={() => {}} />);
     expect(amount()?.value).toBe('');
+  });
+
+  it('shows no account picker for someone who has none', () => {
+    // The whole point of nullable account_id: an app with no accounts logs exactly
+    // the way it always did.
+    render(<QuickAdd open onClose={() => {}} />);
+    expect(document.querySelector('[aria-pressed]')).toBeNull();
+  });
+
+  it('opens on the account used last on this device, not just the first', () => {
+    accounts = [
+      { id: 'a1', name: 'Everyday', archived_at: null },
+      { id: 'a2', name: 'Savings', archived_at: null },
+    ];
+    localStorage.setItem('frankly-last-account:u1', 'a2');
+
+    render(<QuickAdd open onClose={() => {}} />);
+    const pressed = [...document.querySelectorAll('[aria-pressed="true"]')].map(
+      (el) => el.textContent,
+    );
+    expect(pressed).toEqual(['Savings']);
+  });
+
+  it('ignores a remembered account that has since been archived', () => {
+    accounts = [{ id: 'a1', name: 'Everyday', archived_at: null }];
+    localStorage.setItem('frankly-last-account:u1', 'gone');
+
+    render(<QuickAdd open onClose={() => {}} />);
+    const pressed = [...document.querySelectorAll('[aria-pressed="true"]')].map(
+      (el) => el.textContent,
+    );
+    expect(pressed).toEqual(['Everyday']);
   });
 });

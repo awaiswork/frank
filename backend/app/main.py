@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.features import ai_enabled
 from app.limits import limiter, rate_limit_handler
 from app.routers import (
+    accounts,
     advisor,
     auth,
     budgets,
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(oauth.router)
     app.include_router(categories.router)
+    app.include_router(accounts.router)
     app.include_router(transactions.router)
     app.include_router(budgets.router)
     app.include_router(goals.router)

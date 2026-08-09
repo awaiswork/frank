@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
+  useAccounts,
   useCategories,
   useCreateTransaction,
   useDeleteTransaction,
   useTransactions,
 } from '../api/hooks';
 import type { Kind } from '../api/types';
+import { useAuth } from '../auth/useAuth';
+import { lastAccount, rememberAccount } from '../lib/lastAccount';
 import { categoryColor, categoryTint } from '../lib/categoryColor';
 import { rankCategories } from '../lib/categories';
 import { currentMonth, shiftDays, todayISO } from '../lib/date';
@@ -55,7 +58,9 @@ export function QuickAdd({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 function QuickAddSheet({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth();
   const categories = useCategories();
+  const accounts = useAccounts();
   const transactions = useTransactions({ month: currentMonth() });
   const create = useCreateTransaction();
   const remove = useDeleteTransaction();
@@ -64,6 +69,9 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   const [amount, setAmount] = useState('');
   const [kind, setKind] = useState<Kind>('expense');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // Only what the user actually tapped. The account in force is derived below, so
+  // there is no effect racing the accounts query to seed it.
+  const [pickedAccount, setPickedAccount] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [occurredOn, setOccurredOn] = useState(todayISO);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -101,6 +109,21 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
+  const openAccounts = useMemo(
+    () => (accounts.data?.accounts ?? []).filter((a) => a.archived_at === null),
+    [accounts.data],
+  );
+
+  // Derived rather than seeded in an effect: the accounts arrive after first paint,
+  // and an effect that writes state would render one frame with nothing selected.
+  // null here means the user has no accounts at all, which stays a valid way to log.
+  const accountId = useMemo(() => {
+    if (pickedAccount && openAccounts.some((a) => a.id === pickedAccount)) return pickedAccount;
+    if (!openAccounts.length) return null;
+    const remembered = user ? lastAccount(user.id) : null;
+    return (openAccounts.find((a) => a.id === remembered) ?? openAccounts[0]).id;
+  }, [pickedAccount, openAccounts, user]);
+
   function tapKey(key: string) {
     setError(null);
     if (key === '⌫') return setAmount((a) => a.slice(0, -1));
@@ -130,9 +153,11 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
         kind,
         occurred_on: occurredOn,
         category_id: categoryId,
+        account_id: accountId,
       },
       {
         onSuccess: (tx) => {
+          if (user && accountId) rememberAccount(user.id, accountId);
           setLogged({
             id: tx.id,
             amountCents: cents,
@@ -245,6 +270,31 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
                 />
                 <span className="num text-[30px] font-medium text-muted">€</span>
               </div>
+
+              {/* Which account it came out of. Hidden entirely when there are none,
+                  so someone who has never opened one sees exactly what they saw before. */}
+              {openAccounts.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-4 pb-4">
+                  {openAccounts.map((a) => {
+                    const on = accountId === a.id;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setPickedAccount(a.id)}
+                        aria-pressed={on}
+                        className={`rounded-full border px-3 py-2 text-[13.5px] font-medium transition-colors ${
+                          on
+                            ? 'border-ink bg-ink text-paper'
+                            : 'border-line-2 text-ink-2 hover:text-ink'
+                        }`}
+                      >
+                        {a.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Categories — one tap, most-used first */}
               <div className="flex flex-wrap gap-2 px-4 pb-4">

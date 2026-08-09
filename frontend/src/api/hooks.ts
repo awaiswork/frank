@@ -3,6 +3,9 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch, json } from './client';
 import type {
+  Account,
+  AccountCreate,
+  AccountsPayload,
   AdviceHistory,
   BudgetActual,
   Category,
@@ -31,6 +34,47 @@ function invalidateMoney(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: ['budgets'] });
   void client.invalidateQueries({ queryKey: ['insights'] });
   void client.invalidateQueries({ queryKey: ['daily'] });
+  // Balances are derived from the same rows, so any transaction write moves them too.
+  void client.invalidateQueries({ queryKey: ['accounts'] });
+}
+
+// --- Accounts ---------------------------------------------------------------
+
+export function useAccounts(includeArchived = false) {
+  return useQuery({
+    queryKey: ['accounts', includeArchived],
+    queryFn: () =>
+      apiFetch<AccountsPayload>(`/accounts${includeArchived ? '?include_archived=true' : ''}`),
+  });
+}
+
+export function useCreateAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AccountCreate) =>
+      apiFetch<Account>('/accounts', { method: 'POST', body: json(body) }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['accounts'] }),
+  });
+}
+
+export function useUpdateAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: { id: string } & Partial<AccountCreate> & { archived?: boolean }) =>
+      apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: json(body) }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['accounts'] }),
+  });
+}
+
+export function useDeleteAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/accounts/${id}`, { method: 'DELETE' }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['accounts'] }),
+  });
 }
 
 /** Everything off — what we assume until the server tells us otherwise. */
