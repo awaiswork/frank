@@ -79,6 +79,7 @@ scheme managed providers hand out — which is why each move cost only documenta
 ## Requires my approval before you do it
 
 - Push to `main` / trigger any production deploy
+- **Open a pull request.** Branching, committing and pushing need no permission — `gh pr create` does. A PR notifies people, invites review, and builds a Vercel preview, so filing one is my call rather than something to find already done. Push the branch, then say it's ready with a title and summary drafted, so approving it is one word.
 - Add or change a migration
 - Change any environment variable (state which platform needs a redeploy after)
 - Add, remove, or upgrade a dependency
