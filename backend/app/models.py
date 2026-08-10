@@ -286,6 +286,14 @@ class Transaction(UUIDPk, Timestamped, Base):
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
+    # The far side of a transfer, and NULL for everything else — enforced by
+    # ``ck_transactions_transfer_shape``. A transfer is deliberately *one* row: the
+    # matched-pair alternative needs application code to keep "both legs exist and sum
+    # to zero" true forever, and gives every future aggregate somewhere to forget it.
+    # One row makes half a transfer unrepresentable instead.
+    counter_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -296,12 +304,25 @@ class Transaction(UUIDPk, Timestamped, Base):
     llm_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("kind IN ('expense','income')", name="ck_transactions_kind"),
+        CheckConstraint("kind IN ('expense','income','transfer')", name="ck_transactions_kind"),
+        # A transfer needs both ends, they must differ, and it carries no category — so
+        # it can never reach a budget however the row is written. Enforced here rather
+        # than trusted to the router, because a constraint cannot be forgotten.
+        CheckConstraint(
+            "(kind = 'transfer'"
+            " AND account_id IS NOT NULL"
+            " AND counter_account_id IS NOT NULL"
+            " AND counter_account_id <> account_id"
+            " AND category_id IS NULL)"
+            " OR (kind <> 'transfer' AND counter_account_id IS NULL)",
+            name="ck_transactions_transfer_shape",
+        ),
         CheckConstraint("amount_cents > 0", name="ck_transactions_amount_positive"),
         CheckConstraint("source IN ('manual','nl_parse')", name="ck_transactions_source"),
         Index("ix_transactions_user_occurred", "user_id", text("occurred_on DESC")),
         Index("ix_transactions_user_category", "user_id", "category_id"),
         Index("ix_transactions_account", "account_id"),
+        Index("ix_transactions_counter_account", "counter_account_id"),
     )
 
 

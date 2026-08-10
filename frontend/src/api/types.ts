@@ -1,6 +1,11 @@
 /** Hand-written types mirroring the FastAPI schemas (technical-plan.md §8). */
 
+/** A category is only ever one of these two, and its own DB CHECK says so. */
 export type Kind = 'expense' | 'income';
+
+/** What a transaction can be. Wider than Kind: money can also move between your own
+ *  accounts, which is neither spending nor income. */
+export type TransactionKind = Kind | 'transfer';
 
 export interface TokenOut {
   access_token: string;
@@ -63,9 +68,11 @@ export interface AccountCreate {
 
 export interface Transaction {
   id: string;
-  kind: Kind;
+  kind: TransactionKind;
   /** null means it predates the ledger — counts as spending, never toward a balance. */
   account_id: string | null;
+  /** The far side of a transfer; null for everything else. */
+  counter_account_id: string | null;
   amount_cents: number;
   description: string;
   merchant: string | null;
@@ -76,8 +83,9 @@ export interface Transaction {
 }
 
 export interface TransactionCreate {
-  kind?: Kind;
+  kind?: TransactionKind;
   account_id?: string | null;
+  counter_account_id?: string | null;
   amount_cents: number;
   description: string;
   merchant?: string | null;

@@ -50,6 +50,44 @@ def _require_owned_account(db: Session, user_id: uuid.UUID, account_id: uuid.UUI
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That account is archived")
 
 
+def _require_transfer_shape(
+    kind: str,
+    account_id: uuid.UUID | None,
+    counter_account_id: uuid.UUID | None,
+    category_id: uuid.UUID | None,
+) -> None:
+    """The same rules as ck_transactions_transfer_shape, said in words.
+
+    The constraint is what makes a malformed transfer impossible; this exists so the
+    user gets a sentence instead of a 500 from a violated CHECK. Deliberately a
+    restatement rather than the only guard — a check that lives solely in a router is
+    a check the next writer can route around.
+    """
+    if kind == "transfer":
+        if account_id is None or counter_account_id is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "A transfer needs an account at both ends.",
+            )
+        if account_id == counter_account_id:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "A transfer needs two different accounts.",
+            )
+        if category_id is not None:
+            # Categories are how spend reaches budgets, and moving your own money is
+            # not spending. Refusing here keeps that true by construction.
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "A transfer between your own accounts isn't spending, so it has no category.",
+            )
+    elif counter_account_id is not None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Only a transfer has a second account.",
+        )
+
+
 @router.get("", response_model=list[TransactionOut])
 def list_transactions(
     user: CurrentUser,
@@ -81,10 +119,13 @@ def list_transactions(
 def create_transaction(body: TransactionCreate, user: CurrentUser, db: DbSession) -> Transaction:
     _require_owned_category(db, user.id, body.category_id)
     _require_owned_account(db, user.id, body.account_id)
+    _require_owned_account(db, user.id, body.counter_account_id)
+    _require_transfer_shape(body.kind, body.account_id, body.counter_account_id, body.category_id)
     tx = Transaction(
         user_id=user.id,
         category_id=body.category_id,
         account_id=body.account_id,
+        counter_account_id=body.counter_account_id,
         kind=body.kind,
         amount_cents=body.amount_cents,
         description=body.description,
@@ -107,8 +148,13 @@ def update_transaction(
         _require_owned_category(db, user.id, data["category_id"])
     if "account_id" in data:
         _require_owned_account(db, user.id, data["account_id"])
+    if "counter_account_id" in data:
+        _require_owned_account(db, user.id, data["counter_account_id"])
     for field, value in data.items():
         setattr(tx, field, value)
+    # Validated against the row as it will be, not as it arrived: a patch that only
+    # changes `kind` still has to produce a legal shape with the fields already there.
+    _require_transfer_shape(tx.kind, tx.account_id, tx.counter_account_id, tx.category_id)
     db.commit()
     return tx
 

@@ -65,7 +65,11 @@ function preposition() {
   return account()?.closest('label')?.childNodes[0]?.textContent?.trim() ?? null;
 }
 
-function kindButton(kind: 'expense' | 'income') {
+function destination() {
+  return document.querySelector<HTMLSelectElement>('select[aria-label="Destination account"]');
+}
+
+function kindButton(kind: 'expense' | 'income' | 'transfer') {
   return [...document.querySelectorAll('button')].find(
     (b) => b.textContent?.trim().toLowerCase() === kind,
   );
@@ -163,6 +167,39 @@ describe('QuickAdd', () => {
     render(<QuickAdd open onClose={() => {}} />);
     // Falls back to the first rather than to a stale id the server would reject.
     expect(account()?.value).toBe('a1');
+  });
+
+  it('offers no transfer until there is somewhere to transfer to', () => {
+    // With one account the only possible transfer is to itself, which the database
+    // refuses — so offering it would be offering something that cannot be done.
+    accounts = [{ id: 'a1', name: 'Everyday', archived_at: null }];
+    render(<QuickAdd open onClose={() => {}} />);
+    expect(kindButton('transfer')).toBeUndefined();
+
+    cleanup();
+    accounts = [...TWO];
+    render(<QuickAdd open onClose={() => {}} />);
+    expect(kindButton('transfer')).toBeDefined();
+  });
+
+  it('reads as from one account to another, and never to itself', () => {
+    accounts = [...TWO];
+    render(<QuickAdd open onClose={() => {}} />);
+    fireEvent.click(kindButton('transfer')!);
+
+    expect(preposition()).toBe('from');
+    expect(account()?.value).toBe('a1');
+    // The source is absent from the destinations, so "to itself" is unofferable.
+    expect([...(destination()?.options ?? [])].map((o) => o.value)).toEqual(['a2']);
+  });
+
+  it('drops the categories for a transfer, because it is not spending', () => {
+    accounts = [...TWO];
+    render(<QuickAdd open onClose={() => {}} />);
+    expect(document.body.textContent).toContain('Fun');
+
+    fireEvent.click(kindButton('transfer')!);
+    expect(document.body.textContent).not.toContain('Fun');
   });
 
   it('says money leaves an account but lands in one', () => {

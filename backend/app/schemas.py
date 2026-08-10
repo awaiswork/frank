@@ -9,7 +9,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+# Categories and parsed drafts are only ever one of these two — a category cannot be
+# a transfer, and its own DB CHECK says so. Kept separate from TransactionKind so
+# widening what a *transaction* can be does not quietly widen those.
 Kind = Literal["expense", "income"]
+TransactionKind = Literal["expense", "income", "transfer"]
 
 
 class RegisterIn(BaseModel):
@@ -157,8 +161,11 @@ class CategoryOut(BaseModel):
 
 
 class TransactionCreate(BaseModel):
-    kind: Kind = "expense"
+    kind: TransactionKind = "expense"
     account_id: uuid.UUID | None = None
+    # Required for a transfer and rejected otherwise — see `_require_transfer_shape`
+    # in the router, and ck_transactions_transfer_shape behind it.
+    counter_account_id: uuid.UUID | None = None
     amount_cents: int = Field(gt=0)
     description: str = Field(min_length=1, max_length=500)
     merchant: str | None = Field(default=None, max_length=200)
@@ -167,8 +174,9 @@ class TransactionCreate(BaseModel):
 
 
 class TransactionUpdate(BaseModel):
-    kind: Kind | None = None
+    kind: TransactionKind | None = None
     account_id: uuid.UUID | None = None
+    counter_account_id: uuid.UUID | None = None
     amount_cents: int | None = Field(default=None, gt=0)
     description: str | None = Field(default=None, min_length=1, max_length=500)
     merchant: str | None = Field(default=None, max_length=200)
@@ -182,6 +190,7 @@ class TransactionOut(BaseModel):
     id: uuid.UUID
     kind: str
     account_id: uuid.UUID | None
+    counter_account_id: uuid.UUID | None
     amount_cents: int
     description: str
     merchant: str | None

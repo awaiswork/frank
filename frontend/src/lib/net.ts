@@ -1,0 +1,24 @@
+import type { Transaction, TransactionKind } from '../api/types';
+
+/**
+ * What each kind does to a day's net.
+ *
+ * The server-side counterpart is `services/accounts.LEG_SIGNS`, guarded by a test
+ * that reads the database CHECK constraint. Here the type does that job:
+ * `Record<TransactionKind, number>` stops compiling the moment a kind is added, so
+ * no kind can fall through to a default.
+ *
+ * A transfer is 0 because moving your own money between accounts is neither a gain
+ * nor a loss on the day it happens. The reducer this replaced read
+ * `kind === 'income' ? +x : -x`, which would have counted every transfer as spending.
+ */
+export const NET_SIGNS: Record<TransactionKind, number> = {
+  income: 1,
+  expense: -1,
+  transfer: 0,
+};
+
+/** Signed total for a day's transactions — income up, spending down, moves neutral. */
+export function dayNet(items: readonly Transaction[]): number {
+  return items.reduce((total, t) => total + NET_SIGNS[t.kind] * t.amount_cents, 0);
+}

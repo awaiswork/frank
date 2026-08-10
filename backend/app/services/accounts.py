@@ -12,21 +12,31 @@ import datetime as dt
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, Integer, case, func, select
+from sqlalchemy import Integer, case, func, or_, select, union_all
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.selectable import Subquery
 
 from app.models import Account, Transaction
 
-# What each kind of entry does to the balance of the account it belongs to.
+# What one transaction contributes to the balance of each account it touches, as
+# (own account, counter account). None means it does not touch that side.
 #
-# This is the only sign-based aggregation on the server, and the only place a new
-# transaction kind can be silently mishandled: a `CASE ... ELSE 0` would quietly
-# contribute nothing for a kind nobody remembered, so a transfer would move no money
-# and the balance would just be wrong. `test_balance_signs_cover_every_kind` reads the
-# allowed values straight out of the ck_transactions_kind constraint and fails the
-# moment this map stops matching them — so widening that CHECK forces a decision here
-# rather than allowing an omission.
-BALANCE_SIGNS: dict[str, int] = {"income": 1, "expense": -1}
+# This has to be a *pair* rather than a single sign, and that is the whole reason the
+# query below is shaped the way it is. A transfer's effect depends on which account is
+# being asked about: it leaves `account_id` and arrives at `counter_account_id`. Under
+# the flat {kind: sign} map this started as, the honest-looking fix — "transfer": -1 —
+# produces a half transfer, where money leaves the source and never lands anywhere.
+# That reads as handled and is worse than the omission it replaces, so the shape of
+# this map is what makes it hard to get wrong.
+#
+# `test_balance_signs_cover_every_kind` reads the permitted values straight out of the
+# ck_transactions_kind constraint, so widening that CHECK forces a decision here
+# instead of allowing a silent gap.
+LEG_SIGNS: dict[str, tuple[int, int | None]] = {
+    "income": (1, None),
+    "expense": (-1, None),
+    "transfer": (-1, 1),
+}
 
 
 @dataclass(frozen=True)
@@ -36,20 +46,43 @@ class AccountBalance:
     entry_count: int
 
 
-def _signed_amount() -> ColumnElement[int]:
-    """SUM(±amount_cents) built from BALANCE_SIGNS, with no catch-all branch."""
-    return func.coalesce(
-        func.sum(
-            case(
-                *(
-                    (Transaction.kind == kind, Transaction.amount_cents * sign)
-                    for kind, sign in BALANCE_SIGNS.items()
-                ),
-                else_=None,
-            )
-        ),
-        0,
-    )
+def _legs(user_id: uuid.UUID) -> Subquery:
+    """One row per (account, signed contribution) — the ledger as double entry.
+
+    A transaction emits a leg for its own account and, when the kind has a counter
+    side, a second leg for that. Splitting it this way is what makes conservation a
+    property of the shape rather than something to remember: a transfer emits −x and
+    +x, so no arrangement of transfers can change the sum of all balances.
+    """
+    own = select(
+        Transaction.account_id.label("account_id"),
+        case(
+            *(
+                (Transaction.kind == kind, Transaction.amount_cents * signs[0])
+                for kind, signs in LEG_SIGNS.items()
+            ),
+            else_=None,
+        ).label("delta"),
+        Transaction.occurred_on.label("occurred_on"),
+    ).where(Transaction.user_id == user_id, Transaction.account_id.is_not(None))
+
+    counter_kinds = {k: s[1] for k, s in LEG_SIGNS.items() if s[1] is not None}
+    if not counter_kinds:  # pragma: no cover — 'transfer' always has a far side
+        return own.subquery()
+
+    counter = select(
+        Transaction.counter_account_id.label("account_id"),
+        case(
+            *(
+                (Transaction.kind == kind, Transaction.amount_cents * sign)
+                for kind, sign in counter_kinds.items()
+            ),
+            else_=None,
+        ).label("delta"),
+        Transaction.occurred_on.label("occurred_on"),
+    ).where(Transaction.user_id == user_id, Transaction.counter_account_id.is_not(None))
+
+    return union_all(own, counter).subquery()
 
 
 def balances(
@@ -61,18 +94,19 @@ def balances(
     already accounts for everything that happened before the ledger started, so
     counting them again would double them. Such an entry still counts toward spending.
     """
+    legs = _legs(user_id)
     movement = (
         select(
-            Transaction.account_id.label("account_id"),
-            _signed_amount().label("delta"),
-            func.count(Transaction.id).label("entries"),
+            legs.c.account_id.label("account_id"),
+            func.coalesce(func.sum(legs.c.delta), 0).label("delta"),
+            func.count().label("entries"),
         )
-        .join(Account, Account.id == Transaction.account_id)
-        .where(
-            Transaction.user_id == user_id,
-            Transaction.occurred_on >= Account.opened_on,
-        )
-        .group_by(Transaction.account_id)
+        # Each leg is measured against its *own* account's start date, so a transfer
+        # into an account opened last week counts there even if it left an account
+        # that has been open for years.
+        .join(Account, Account.id == legs.c.account_id)
+        .where(legs.c.occurred_on >= Account.opened_on)
+        .group_by(legs.c.account_id)
         .subquery()
     )
 
@@ -100,9 +134,20 @@ def balances(
 
 
 def has_entries(db: Session, account_id: uuid.UUID) -> bool:
-    """Whether anything references this account — deletion is only for empty ones."""
+    """Whether anything references this account — deletion is only for empty ones.
+
+    Both sides, deliberately. An account that has only ever been a transfer
+    *destination* has no rows naming it as `account_id`, so checking one column would
+    call it empty and offer a delete the RESTRICT foreign key then refuses — a 500
+    where the user deserved an explanation.
+    """
     return db.scalar(
-        select(func.count(Transaction.id)).where(Transaction.account_id == account_id)
+        select(func.count(Transaction.id)).where(
+            or_(
+                Transaction.account_id == account_id,
+                Transaction.counter_account_id == account_id,
+            )
+        )
     ) not in (0, None)
 
 
