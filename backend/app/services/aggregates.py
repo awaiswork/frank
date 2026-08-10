@@ -50,7 +50,10 @@ def _spent() -> ColumnElement[int]:
         func.sum(
             case(
                 *(
-                    (Transaction.kind == kind, Transaction.amount_cents * sign)
+                    # base_amount_cents, not amount_cents: a report adds figures up
+                    # across currencies, and only the base column is comparable. The
+                    # two are equal for anything recorded in the reporting currency.
+                    (Transaction.kind == kind, Transaction.base_amount_cents * sign)
                     for kind, sign in SPEND_SIGNS.items()
                 ),
                 else_=None,
@@ -329,7 +332,7 @@ def safe_to_spend(
     today = today if today is not None else start
 
     income_logged = (
-        select(func.coalesce(func.sum(Transaction.amount_cents), 0))
+        select(func.coalesce(func.sum(Transaction.base_amount_cents), 0))
         .where(
             Transaction.user_id == user_id,
             Transaction.kind == "income",

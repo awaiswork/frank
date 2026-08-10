@@ -11,6 +11,7 @@ import os
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -22,6 +23,7 @@ from app.config import get_settings
 from app.db import Base, get_db
 from app.email import EmailMessage
 from app.main import create_app
+from app.models import Transaction
 
 
 def _test_db_url() -> str:
@@ -194,3 +196,18 @@ def client(db: Session) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+def transaction(**kw: object) -> Transaction:
+    """A transaction in the reporting currency — the only kind these fixtures build.
+
+    `currency`, `base_amount_cents` and `fx_rate` are NOT NULL, and deliberately have no
+    defaults on the model: a write path that forgets them should fail loudly rather than
+    quietly record a foreign amount as though it were domestic. Tests are not that risk,
+    so they say once, here, that everything they build is already in the base currency.
+    """
+    amount = kw["amount_cents"]
+    kw.setdefault("currency", "EUR")
+    kw.setdefault("base_amount_cents", amount)
+    kw.setdefault("fx_rate", Decimal(1))
+    return Transaction(**kw)

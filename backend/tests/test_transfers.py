@@ -33,6 +33,7 @@ from app.services.aggregates import (
     spend_by_category,
 )
 from tests.conftest import create_account as register
+from tests.conftest import transaction
 
 OPENED = dt.date(2026, 6, 1)
 JUNE = dt.date(2026, 6, 1)
@@ -72,7 +73,7 @@ def _account(
 
 
 def _tx(db: Session, user: User, **kw: object) -> Transaction:
-    tx = Transaction(
+    tx = transaction(
         user_id=user.id,
         description="t",
         occurred_on=kw.pop("on", dt.date(2026, 6, 10)),

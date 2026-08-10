@@ -16,9 +16,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.models import Account, Transaction, User
+from app.models import Account, User
 from app.services.accounts import LEG_SIGNS, balances
 from tests.conftest import create_account as register
+from tests.conftest import transaction
 
 OPENED = dt.date(2026, 6, 1)
 
@@ -57,7 +58,7 @@ def _tx(
     kind: str = "expense",
 ) -> None:
     db.add(
-        Transaction(
+        transaction(
             user_id=user.id,
             account_id=account.id if account else None,
             kind=kind,

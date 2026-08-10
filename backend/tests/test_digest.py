@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.signing import sign, verify
-from app.models import NotificationSetting, Transaction, User
+from app.models import NotificationSetting, User
 from app.services import digest
-from tests.conftest import SENT
+from tests.conftest import SENT, transaction
 from tests.conftest import create_account as register
 
 KIND = NotificationSetting.WEEKLY_DIGEST
@@ -232,7 +232,7 @@ def test_the_week_is_measured_against_the_one_before(db: Session) -> None:
     today = dt.date(2026, 8, 10)
     for days_ago, cents in ((3, 40_00), (10, 25_00)):
         db.add(
-            Transaction(
+            transaction(
                 user_id=user.id,
                 kind="expense",
                 amount_cents=cents,

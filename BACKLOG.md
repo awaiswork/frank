@@ -37,7 +37,8 @@ for review → approve → implement → diff → review → tests → stop.
 | 5 | Assets + net worth trend | M | **Done** |
 | 6 | Weekly digest email | L | **Done** |
 | 7 | Income flows / allocation *(optional)* | S | Not started |
-| 8 | True multi-currency | L | Not started |
+| 8a | Multi-currency groundwork (invisible) | M | **Done** |
+| 8b | Foreign entry, rates, and the UI | L | Not started |
 
 ---
 
@@ -582,25 +583,74 @@ answer. Pull it forward only if the Wealth section leaves a real hole.
 
 ---
 
-### Phase 8 — True multi-currency · L
+### Phase 8a — Multi-currency groundwork · M · **done**
 
-`currency`, `base_amount_cents` and `fx_rate` on transactions (door 2); base currency on
-users; an `fx_rates` table fed daily from Frankfurter/ECB via the same cron, with
+Invisible on purpose, and split out for one reason: **every existing test had to keep
+passing with its assertions untouched.** `transactions` gained `currency`,
+`base_amount_cents` and `fx_rate`, and every money figure in the app switched from
+summing `amount_cents` to summing `base_amount_cents`. Because the backfill makes the two
+equal everywhere, the whole suite is the regression net for that sweep — if it moved a
+number, that is how you find out, rather than discovering it later tangled up with new
+behaviour.
+
+**The backfill is not a guess.** A single-currency ledger really was in that currency at
+a rate of exactly one, so `currency = users.currency`, `fx_rate = 1`,
+`base_amount_cents = amount_cents` is the truth about those rows.
+
+**The rule the phase exists to protect:** the converted figure is *stored*, never
+recomputed. A report multiplying by a rate at read time would move last March's spending
+because the euro moved this morning. `test_a_rate_change_cannot_move_a_recorded_total`
+rewrites `fx_rate` to something absurd and asserts every figure stays put.
+
+Verified by sabotage — pointing the aggregates back at `amount_cents` fails with
+`assert 4500 == 4120`, the dollar figure counted as euros, in four places at once.
+
+**Correction to the plan:** the backlog treated multi-currency as one phase. It is two,
+and only the second is hard. A transaction in another currency *from an account in your
+own* — you pay $45 and €41.20 leaves the card — needs no change to accounts at all. An
+account *denominated* in another currency does: its balance is genuinely in USD, so net
+worth would have to convert every historical point at the rate then, and
+`opening_balance_cents` would need a base equivalent. Deferred, with `accounts.currency`
+still constrained to the user's own — the column was added in Phase 1 so this stays
+possible, and deferring does not spend that.
+
+**A cost that was not in the plan:** the three columns are NOT NULL with no model
+defaults, so eleven test fixtures across nine files had to say which currency they build
+in. Resolved with one helper in `conftest` naming that assumption rather than three
+fields copied nine times. No assertion changed — verified by diffing for altered
+`assert` lines.
+
+*Schema:* migration `0015`. Additive with a backfill; round-trips.
+
+---
+
+### Phase 8b — Foreign entry, rates, and the UI · L
+
+An `fx_rates` table fed daily from Frankfurter/ECB via the existing hourly cron, with
 graceful fallback to the last known rate; manual per-transaction rate override, because a
 bank's real rate never matches mid-market.
 
-**The FX rate is stored at transaction time. Historical totals are never recomputed.**
+The columns and the rule they protect landed in 8a; what is left is filling them from
+something other than "one".
 
-Backfill is clean and honest: everything captured while single-currency gets
-`currency = base`, `fx_rate = 1.0`, `base_amount_cents = amount_cents`. That is not a
-guess, it is the truth.
-
-The real cost is on the frontend: `formatMoney` hardcodes `€`, there are eight more
-literal `€` in JSX plus the CSV header, and `Intl.NumberFormat` is not used anywhere.
-That is a frontend-wide sweep, not a backend feature.
+- **Rates on a schedule, not at write time.** Frankfurter needs no API key and `httpx` is
+  already a direct dependency, so **no new dependency and no new env var**. An HTTP call
+  on the transaction write path would add latency and a failure mode to the one thing
+  that must always work.
+- **Manual override is the better input, not a fallback.** A statement shows both numbers
+  — $45 and €41.20 — so entering both is more accurate than any mid-market rate, and
+  `fx_rate` is then derived from what actually happened.
+- **Formatting decision already taken:** foreign amounts render as `45,00 USD` — the
+  app's own numeric convention with an ISO code rather than a symbol. Unambiguous, no
+  per-currency symbol/position/separator rules, obviously not your own money at a glance,
+  and it leaves the design system alone. `Intl.NumberFormat` would be more correct in
+  isolation and would change how every existing euro amount looks.
+- The frontend sweep is the bulk of it: `formatMoney` hardcodes `€`, with 25 more literal
+  `€` across nine files plus the CSV header. `TransactionOut` does not expose the new
+  columns yet — 8b adds them with the display that needs them.
 
 *Why last:* it is the deepest change, and nothing in Phases 0–7 forces a decision that
-makes it painful — provided doors 2 and 8 hold.
+makes it painful — provided doors 2 and 8 hold. They did.
 
 ---
 

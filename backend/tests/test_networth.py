@@ -16,9 +16,10 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import Account, Asset, AssetValuation, Transaction, User
+from app.models import Account, Asset, AssetValuation, User
 from app.services.networth import net_worth, series_dates
 from tests.conftest import create_account as register
+from tests.conftest import transaction
 
 TODAY = dt.date(2026, 8, 10)
 OPENED = dt.date(2026, 1, 1)
@@ -112,7 +113,7 @@ def test_a_backdated_transaction_moves_every_later_point(db: Session) -> None:
 
     before = [p.total_cents for p in net_worth(db, user.id, today=TODAY).points]
     db.add(
-        Transaction(
+        transaction(
             user_id=user.id,
             account_id=account.id,
             kind="expense",
@@ -183,7 +184,7 @@ def test_moving_money_never_moves_net_worth_at_any_point(db: Session) -> None:
     before = [p.total_cents for p in net_worth(db, user.id, today=TODAY).points]
 
     db.add(
-        Transaction(
+        transaction(
             user_id=user.id,
             account_id=a.id,
             counter_account_id=b.id,

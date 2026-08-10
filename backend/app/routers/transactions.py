@@ -13,6 +13,7 @@ from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
 from app.models import Account, Category, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
 from app.services.aggregates import month_bounds, parse_month
+from app.services.money import in_base
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -121,8 +122,12 @@ def create_transaction(body: TransactionCreate, user: CurrentUser, db: DbSession
     _require_owned_account(db, user.id, body.account_id)
     _require_owned_account(db, user.id, body.counter_account_id)
     _require_transfer_shape(body.kind, body.account_id, body.counter_account_id, body.category_id)
+    currency, base_cents, rate = in_base(user, body.amount_cents)
     tx = Transaction(
         user_id=user.id,
+        currency=currency,
+        base_amount_cents=base_cents,
+        fx_rate=rate,
         category_id=body.category_id,
         account_id=body.account_id,
         counter_account_id=body.counter_account_id,
