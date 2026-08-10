@@ -17,6 +17,7 @@ from app.routers import (
     goals,
     insights,
     nl,
+    notifications,
     oauth,
     recurring,
     transactions,
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(recurring.router)
     app.include_router(nl.router)
     app.include_router(advisor.router)
+    app.include_router(notifications.router)
     return app
 
 

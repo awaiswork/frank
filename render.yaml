@@ -80,3 +80,15 @@ services:
       # frankfurt and Neon eu-central-1). Do not put the resend.dev sender back.
       - key: EMAIL_FROM
         value: "Frankly <noreply@askfrankly.app>"
+      # Shared secret for the scheduled digest endpoint, set in the dashboard because
+      # it is a secret. `sync: false` leaves the existing value alone.
+      #
+      # Unset means POST /internal/digest/run refuses every request, which is
+      # deliberate: email degrades to the console sender when it has no key, and that
+      # is a graceful fallback, but a route that emails every user must not degrade the
+      # same way. Fails closed, not open.
+      #
+      # Generate one with `openssl rand -base64 32`, put the same value in the repo's
+      # DIGEST_CRON_SECRET Actions secret, and the weekly workflow will do the rest.
+      - key: CRON_SECRET
+        sync: false

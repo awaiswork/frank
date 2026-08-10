@@ -18,6 +18,7 @@ import type {
   LendPayload,
   NetWorth,
   NlDraft,
+  Notifications,
   Recurring,
   RecurringCreate,
   Transaction,
@@ -171,6 +172,24 @@ export function useParseNl() {
   return useMutation({
     mutationFn: (text: string) =>
       apiFetch<NlDraft[]>('/nl/parse', { method: 'POST', body: json({ text }) }),
+  });
+}
+
+// --- Notifications -----------------------------------------------------------
+
+export function useNotifications() {
+  return useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => apiFetch<Notifications>('/notifications'),
+  });
+}
+
+export function useUpdateNotifications() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<Notifications>) =>
+      apiFetch<Notifications>('/notifications', { method: 'PATCH', body: json(body) }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['notifications'] }),
   });
 }
 

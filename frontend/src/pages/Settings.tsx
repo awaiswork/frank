@@ -1,6 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCategories, useFeatures, useTransactions, useUpdateMe } from '../api/hooks';
+import {
+  useCategories,
+  useFeatures,
+  useNotifications,
+  useTransactions,
+  useUpdateMe,
+  useUpdateNotifications,
+} from '../api/hooks';
 import type { Category, Transaction, User } from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { CategoryAvatar } from '../components/CategoryAvatar';
@@ -35,6 +42,12 @@ export function Settings() {
           <IncomeRow incomeCents={user?.monthly_income_cents ?? null} onSaved={setUser} />
           <div className="h-px bg-line" />
           <TimezoneRow timezone={user?.timezone ?? null} onSaved={setUser} />
+        </Card>
+      </Block>
+
+      <Block label="Email">
+        <Card>
+          <DigestRow />
         </Card>
       </Block>
 
@@ -390,4 +403,26 @@ function toCsv(rows: Transaction[], names: Map<string, string>): string {
     ].join(','),
   );
   return [head.join(','), ...lines].join('\n');
+}
+
+function DigestRow() {
+  const prefs = useNotifications();
+  const update = useUpdateNotifications();
+  const on = prefs.data?.weekly_digest ?? true;
+
+  return (
+    <Row
+      label="Weekly summary"
+      hint="Monday mornings, in your time zone. Sign-in codes always come regardless."
+    >
+      <Button
+        variant="secondary"
+        disabled={prefs.isPending || update.isPending}
+        onClick={() => update.mutate({ weekly_digest: !on })}
+        aria-pressed={on}
+      >
+        {update.isPending ? 'Saving…' : on ? 'On' : 'Off'}
+      </Button>
+    </Row>
+  );
 }

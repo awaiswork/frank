@@ -16,6 +16,7 @@ import { Settings } from './pages/Settings';
 import { Transactions } from './pages/Transactions';
 import { Lending } from './pages/Lending';
 import { Recurring } from './pages/Recurring';
+import { Unsubscribe } from './pages/Unsubscribe';
 import { Wealth } from './pages/Wealth';
 import { VerifyCode } from './pages/VerifyCode';
 
@@ -30,6 +31,7 @@ export default function App() {
           carry their state in the router rather than the URL. */}
       <Route path="/verify" element={<VerifyCode />} />
       {/* Where Google's redirect lands. The refresh cookie is already set. */}
+      <Route path="/unsubscribe" element={<Unsubscribe />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/onboarding" element={<Onboarding />} />

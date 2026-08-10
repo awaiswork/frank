@@ -1,0 +1,199 @@
+"""The weekly digest: who is due one, and what it is allowed to say.
+
+Two halves, and the first is the one that can go wrong quietly.
+
+**Choosing who to send to** claims the week before sending it. The selection is an
+``UPDATE ... RETURNING`` with the "not sent recently" predicate inside it, so two
+overlapping cron runs cannot both pick up the same person: the second update matches no
+rows. If delivery then fails, the claim stands and that person misses a week. That is
+the deliberate trade — a missed digest is a disappointment, a duplicate one is the app
+looking broken, and only one of the two can be avoided at a time.
+
+**Building the content** goes through the same aggregates every screen uses. There are
+no numbers here that are not already on a screen somewhere, which is the point: a digest
+is the easiest place in the app to assert something nobody is watching, so it is given
+nothing new to assert. `income_known` gates safe-to-spend here exactly as it does on
+Home.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import uuid
+from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from app.models import NotificationSetting, User
+from app.services import recurring
+from app.services.aggregates import (
+    _is_spend,
+    _spent,
+    parse_month,
+    safe_to_spend,
+    spend_by_category,
+)
+
+#: Local weekday and hour a digest goes out. Monday morning, in the reader's own time.
+SEND_WEEKDAY = 0
+SEND_HOUR = 8
+
+#: How recently a send blocks another. Six rather than seven so an hour of cron skew
+#: cannot push a week's digest past its own window and skip it entirely.
+COOLDOWN_DAYS = 6
+
+
+@dataclass(frozen=True)
+class DigestContent:
+    week_start: dt.date
+    spent_cents: int
+    previous_spent_cents: int
+    top_categories: list[tuple[str, int]]
+    upcoming_cents: int
+    upcoming_count: int
+    safe_to_spend_cents: int | None  # None when there is no income to reason from
+    streak: int
+
+
+def _local_now(user: User, now: dt.datetime) -> dt.datetime:
+    """`now` in the user's own zone. Unusable zones fall back to UTC, never raise."""
+    if user.timezone:
+        try:
+            return now.astimezone(ZoneInfo(user.timezone))
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    return now.astimezone(dt.UTC)
+
+
+def due_now(db: Session, now: dt.datetime, *, claim: bool = True) -> list[User]:
+    """Everyone whose local Monday morning has arrived and who has not had one.
+
+    The weekday check is what keeps this well behaved: enabling the digest on a
+    Wednesday sends nothing until the following Monday, rather than firing immediately
+    because "8am has passed".
+
+    ``claim=False`` answers the same question without taking anyone's week, so a run
+    that is not going to send anything can be repeated freely and leaves no trace.
+    """
+    candidates = list(
+        db.execute(
+            select(User, NotificationSetting)
+            .join(
+                NotificationSetting,
+                (NotificationSetting.user_id == User.id)
+                & (NotificationSetting.kind == NotificationSetting.WEEKLY_DIGEST),
+                isouter=True,
+            )
+            .where(User.email_verified_at.is_not(None))
+        )
+    )
+
+    due: list[User] = []
+    for user, setting in candidates:
+        # No row means the default, which is on.
+        if setting is not None and not setting.enabled:
+            continue
+        local = _local_now(user, now)
+        if local.weekday() != SEND_WEEKDAY or local.hour < SEND_HOUR:
+            continue
+        if not claim:
+            due.append(user)
+        elif _claim(db, user.id, now):
+            due.append(user)
+    return due
+
+
+def _claim(db: Session, user_id: uuid.UUID, now: dt.datetime) -> bool:
+    """Take this week's slot for one user, atomically. True if we got it.
+
+    The "not sent recently" test lives inside the UPDATE rather than in a read before
+    it. Read-then-write would let two overlapping runs both see an old timestamp and
+    both send.
+    """
+    cutoff = now - dt.timedelta(days=COOLDOWN_DAYS)
+    claimed = db.execute(
+        update(NotificationSetting)
+        .where(
+            NotificationSetting.user_id == user_id,
+            NotificationSetting.kind == NotificationSetting.WEEKLY_DIGEST,
+            (NotificationSetting.last_sent_at.is_(None))
+            | (NotificationSetting.last_sent_at < cutoff),
+        )
+        .values(last_sent_at=now)
+        .returning(NotificationSetting.id)
+    ).first()
+    if claimed is not None:
+        return True
+
+    # No row to claim yet. Inserting one *is* the claim — and if a concurrent run
+    # inserted first, the unique constraint refuses this one, which is the same answer.
+    exists = db.scalar(
+        select(NotificationSetting.id).where(
+            NotificationSetting.user_id == user_id,
+            NotificationSetting.kind == NotificationSetting.WEEKLY_DIGEST,
+        )
+    )
+    if exists is not None:
+        return False  # a row exists and was sent recently
+    db.add(
+        NotificationSetting(
+            user_id=user_id,
+            kind=NotificationSetting.WEEKLY_DIGEST,
+            enabled=True,
+            last_sent_at=now,
+        )
+    )
+    db.flush()
+    return True
+
+
+def build(db: Session, user: User, today: dt.date) -> DigestContent:
+    """What the week looked like — using only figures a screen already shows."""
+    week_start = today - dt.timedelta(days=7)
+    previous_start = today - dt.timedelta(days=14)
+
+    spent = _sum_spend(db, user.id, week_start, today)
+    previous = _sum_spend(db, user.id, previous_start, week_start)
+
+    month_start = parse_month(None, today=today)
+    categories = [
+        (row.category_name or "Uncategorised", row.spent_cents)
+        for row in spend_by_category(db, user.id, month_start)
+        if row.spent_cents > 0
+    ][:3]
+
+    upcoming = recurring.forecast(db, user.id, today=today, through=today + dt.timedelta(days=7))
+    sts = safe_to_spend(db, user.id, user.monthly_income_cents, month_start, today=today)
+
+    from app.services.daily import current_streak
+
+    return DigestContent(
+        week_start=week_start,
+        spent_cents=spent,
+        previous_spent_cents=previous,
+        top_categories=categories,
+        upcoming_cents=sum(upcoming.values()),
+        upcoming_count=len(upcoming),
+        # The same gate as every other surface: with no income on file there is no
+        # meaningful safe-to-spend, and an email is the last place to start inventing
+        # one, because nobody is looking at the screen when it is written.
+        safe_to_spend_cents=sts.safe_to_spend_cents if sts.income_known else None,
+        streak=current_streak(db, user.id, today),
+    )
+
+
+def _sum_spend(db: Session, user_id: uuid.UUID, start: dt.date, end: dt.date) -> int:
+    """Spending in ``[start, end)`` — the same allow-list every other figure uses."""
+    from app.models import Transaction
+
+    total = db.scalar(
+        select(_spent()).where(
+            Transaction.user_id == user_id,
+            _is_spend(),
+            Transaction.occurred_on >= start,
+            Transaction.occurred_on < end,
+        )
+    )
+    return int(total or 0)

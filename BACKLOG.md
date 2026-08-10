@@ -35,7 +35,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 4a | Recurring — templates + materialisation | L | **Done** |
 | 4b | Recurring — forecast + skip | M | **Done** |
 | 5 | Assets + net worth trend | M | **Done** |
-| 6 | Weekly digest email | M | Not started |
+| 6 | Weekly digest email | L | **Done** |
 | 7 | Income flows / allocation *(optional)* | S | Not started |
 | 8 | True multi-currency | L | Not started |
 
@@ -508,21 +508,69 @@ identical — where 2a only proved it at a point.
 
 ---
 
-### Phase 6 — Weekly digest email · M
+### Phase 6 — Weekly digest email · L · **done**
 
-Per-type notification preferences; a signed unsubscribe token that works without login;
-send in the user's timezone (Phase 0's column); `POST /internal/digest/run` protected by
-a shared secret and hit by a weekly GitHub Actions cron; a `last_sent_at` guard that
-makes a double send impossible even when the cron fires twice.
+Sized **L**, not M — two security surfaces, a table, a content service, an email
+template, a page, a Settings toggle, a workflow and an env var.
 
-Content — worth opening only because Phase 4 exists: spend vs last week, top categories,
-budget pace, goal progress, **what lands next week**, one Frank observation. Not a nag.
+The precondition set in the original planning session was met first: a digest of your own
+typed-in data tells you nothing you did not type, and only becomes worth opening once
+recurring exists. *"€340 of repeating things lands in the next seven days"* is now a real
+sentence.
 
-*Risk:* medium. This is the first token-protected endpoint and the first unauthenticated
-state-changing surface in a deliberately closed auth system; it deserves the same care
-the OTP work got. GitHub's scheduler is best-effort, skews under load, and disables
-scheduled workflows after 60 days without a push — `keep-warm.yml` already documents this
-and a weekly job inherits it more visibly.
+**Default on**, by decision. Which makes the unsubscribe path load-bearing rather than a
+courtesy, and the tests are weighted accordingly.
+
+#### The two surfaces
+
+**The cron route fails closed.** An unset `CRON_SECRET` refuses every request. That is
+deliberately the opposite of email degrading to the console sender when unconfigured:
+that is a graceful fallback, and an unauthenticated route that mails every user is not.
+
+**Unsubscribe is a signed capability, not a session** (`core/signing` — HMAC over user +
+kind under `SECRET_KEY`). It must work from a six-month-old email on a device that never
+signed in, so there is nothing to store and nothing to expire. Scoped to one user and one
+kind, unlocks no data, invalidated wholesale by rotating `SECRET_KEY`. The emailed link
+points at the **app**, which POSTs — mail scanners prefetch links, and a GET that
+unsubscribed would fire unread. The reply never varies with whether the token names
+anyone, so it cannot be used to test which addresses have accounts.
+
+**Sends are claimed before delivery** — `UPDATE … RETURNING` with the "not sent recently"
+predicate inside it, so two overlapping runs cannot both pick up the same person. A
+failure after claiming costs one missed week, which beats a duplicate.
+
+**Hourly cron, not weekly.** A weekly job at a fixed UTC hour ignores `users.timezone`
+entirely; the endpoint instead picks out whoever's *local* Monday morning has arrived. The
+weekday check is what keeps it well behaved — enabling on a Wednesday fires nothing until
+Monday.
+
+#### An incident, and the guard it produced
+
+While testing, I called the run endpoint against local dev **assuming it was on the
+console sender**. It was not: `backend/.env` holds a live Resend key, and the call
+queued five real sends to real addresses. I also printed that key into the transcript
+while diagnosing it — the key needs rotating.
+
+The fix is not a warning comment. **Nothing sends outside `ENV=prod`**: the route reports
+who would receive one, sends nothing, and takes nobody's week, so a local run is
+repeatable and cannot burn the real send. `?dry=true` does the same in production.
+Verified by sabotage and by re-running the exact call that caused it.
+
+A second thing that run left behind: I had `sed`-patched `SEND_HOUR` in the source to
+force a send and did not restore it. **The test suite caught it** — `SEND_HOUR = 0` made
+a Wednesday case pass that should have failed.
+
+*Schema:* migration `0014` — `notification_settings(user_id, kind, enabled, last_sent_at)`.
+`last_sent_at` is per-kind by nature, which is what makes the table earn itself rather
+than being speculative.
+
+*Config:* new `CRON_SECRET`, declared in `render.yaml` as `sync: false` beside
+`EMAIL_API_KEY` — config nobody can read in a diff is config nobody reviews. Needs a
+Render redeploy and a matching `DIGEST_CRON_SECRET` Actions secret.
+
+*Content* uses only figures a screen already shows. `income_known` gates safe-to-spend
+here exactly as on Home — an email is the one surface nobody is watching as it is written,
+and so the easiest place to assert something untrue.
 
 ---
 
