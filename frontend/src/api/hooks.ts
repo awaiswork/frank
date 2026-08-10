@@ -378,6 +378,19 @@ export function useBudgets(month: string) {
   });
 }
 
+export function useDeleteBudget(month: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (categoryId: string) =>
+      apiFetch<void>(`/budgets/${categoryId}${qs({ month })}`, { method: 'DELETE' }),
+    // Removing a limit changes what safe-to-spend holds back, so insights move too.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['budgets'] });
+      void client.invalidateQueries({ queryKey: ['insights'] });
+    },
+  });
+}
+
 export function useUpsertBudget(month: string) {
   const client = useQueryClient();
   return useMutation({
@@ -387,7 +400,9 @@ export function useUpsertBudget(month: string) {
         body: json({ limit_cents: limitCents }),
       }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['budgets', month] });
+      // Not just this month's key: the first write to a month copies the carried set
+      // in, so rows the user did not touch have genuinely changed on the server.
+      void client.invalidateQueries({ queryKey: ['budgets'] });
       void client.invalidateQueries({ queryKey: ['insights'] });
     },
   });

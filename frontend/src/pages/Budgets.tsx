@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useBudgets, useCategories, useUpsertBudget } from '../api/hooks';
+import { useBudgets, useCategories, useDeleteBudget, useUpsertBudget } from '../api/hooks';
 import type { BudgetActual, Category } from '../api/types';
 import { BudgetBar } from '../components/BudgetBar';
 import { FranklyCallout } from '../components/bits';
@@ -85,6 +85,7 @@ function BudgetRow({
   daysLeft: number;
 }) {
   const upsert = useUpsertBudget(month);
+  const remove = useDeleteBudget(month);
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(budget ? centsToInput(budget.limit_cents) : '');
   const [syncedFor, setSyncedFor] = useState(month);
@@ -159,6 +160,18 @@ function BudgetRow({
             >
               {budget ? 'Save' : 'Set'}
             </Button>
+            {/* Only offered when there is a limit to remove. Limits carry into the next
+                month now, so without this one you set once would follow you for good. */}
+            {budget && (
+              <Button
+                variant="ghost"
+                className="h-9 px-2 text-[13px]"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(category.id, { onSuccess: () => setEditing(false) })}
+              >
+                Remove
+              </Button>
+            )}
           </div>
         ) : (
           <button

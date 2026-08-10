@@ -168,6 +168,24 @@ class BudgetActual:
     on_track: bool  # spent_fraction <= elapsed_fraction (with a little slack)
 
 
+def effective_budget_month(db: Session, user_id: uuid.UUID, month_start: dt.date) -> dt.date | None:
+    """Which month's budgets apply to ``month_start`` — carrying them forward.
+
+    A budget was a per-month declaration that evaporated at midnight on the 1st. With no
+    rows for the new month, ``remaining_budgets_cents`` summed nothing and safe-to-spend
+    **jumped by the whole of last month's unspent allowance** — the hero number telling
+    someone the calendar turning had made them richer.
+
+    So the most recent month that *does* have budgets applies until a newer one does.
+    Read-only: nothing is written here, and looking at a month never creates rows.
+    Setting a budget settles the month for real (see `routers/budgets`), which is what
+    makes editing one category not orphan the rest.
+    """
+    return db.scalar(
+        select(func.max(Budget.month)).where(Budget.user_id == user_id, Budget.month <= month_start)
+    )
+
+
 def _spend_per_category_subquery(user_id: uuid.UUID, start: dt.date, end: dt.date) -> Subquery:
     return (
         select(
@@ -194,6 +212,10 @@ def budget_vs_actual(
     month" — the comparison the design's budget bars are built around.
     """
     start, end = month_bounds(month_start)
+    # Limits may be carried from an earlier month; spend is always this month's.
+    budget_month = effective_budget_month(db, user_id, month_start)
+    if budget_month is None:
+        return []
     spend = _spend_per_category_subquery(user_id, start, end)
     stmt = (
         select(
@@ -205,7 +227,7 @@ def budget_vs_actual(
         )
         .join(Category, Category.id == Budget.category_id)
         .join(spend, spend.c.category_id == Budget.category_id, isouter=True)
-        .where(Budget.user_id == user_id, Budget.month == month_start)
+        .where(Budget.user_id == user_id, Budget.month == budget_month)
         .order_by(Category.name)
     )
     elapsed = _elapsed_fraction(month_start, today)
@@ -344,6 +366,9 @@ def safe_to_spend(
 
     # Per category rather than one figure, because it has to be compared against what
     # is still to come in that same category — see `_reserved` below.
+    # Carried forward as well — a jump avoided on the budgets screen but left in
+    # safe-to-spend would be the same bug, on the surface where it matters most.
+    budget_month = effective_budget_month(db, user_id, month_start)
     budget_remaining = {
         cat_id: int(remaining)
         for cat_id, remaining in db.execute(
@@ -353,8 +378,9 @@ def safe_to_spend(
             )
             .select_from(Budget)
             .join(spend, spend.c.category_id == Budget.category_id, isouter=True)
-            .where(Budget.user_id == user_id, Budget.month == month_start)
+            .where(Budget.user_id == user_id, Budget.month == budget_month)
         )
+        if budget_month is not None
     }
     upcoming = recurring.forecast(db, user_id, today=today, through=end - dt.timedelta(days=1))
     remaining_budgets_cents = _reserved(budget_remaining, upcoming)
