@@ -31,7 +31,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 1 | Accounts (no transfers) | M | **Done** |
 | 2a | Transfers | M | **Done** |
 | 2b | Refunds + reconcile | M | **Done** |
-| 3 | IOUs / informal lending | S | Not started |
+| 3 | IOUs / informal lending | S | **Done** |
 | 4a | Recurring — templates + materialisation | M | Not started |
 | 4b | Recurring — forecast into safe-to-spend | S | Not started |
 | 5 | Assets + net worth trend | M | Not started |
@@ -311,19 +311,42 @@ sheet's Refund mode; deleting on a phone was already unreachable and remains so.
 
 ---
 
-### Phase 3 — IOUs / informal lending · S
+### Phase 3 — IOUs / informal lending · S · **done**
 
-"I lent Sam €50" in one tap, with partial repayments and a settle action.
+"I lent Sam €50", with partial repayments and settling. The smallest phase so far,
+because an IOU is a transfer between one of your accounts and a person's — conservation,
+the shape constraint and the exclusion from every spending figure all arrived already
+built from 2a.
 
-Account types `receivable | payable` plus `counterparty_name`. A dedicated screen shows
-"people I owe / people who owe me" and writes ordinary transfers underneath; these types
-are hidden from the general account picker but counted in net worth, correctly, as
-assets and liabilities. Partial repayments and settle fall out of the balance reaching
-zero.
+**Two corrections to what was planned, both shrinking it:**
 
-*Schema:* `accounts.counterparty_name` + widened type CHECK. No new tables.
-*Risk:* low — UI over Phase 2 mechanics.
-*Why here:* it is most of the real-world lending use, and after Phase 2 it is nearly free.
+- **One account type, not a `receivable`/`payable` pair.** The direction is the sign of
+  the balance. A pair cannot represent having lent Sam 50 *and* borrowed 80 from Sam —
+  that is one relationship worth −30, and a pair leaves two accounts for one person that
+  a reader has to net in their head. Grouping by sign is also truer than grouping by a
+  label chosen at creation: a balance cannot go stale.
+- **No `counterparty_name` column.** The account's `name` is the person. A second field
+  would have to agree with the one beside it forever.
+
+So the schema change is one CHECK value — migration `0010`, nothing else.
+
+**The latent bug this would have hit.** `Wealth.tsx` mapped over a list of groups and
+filtered by type, so an account whose type was in no group rendered **nowhere** while
+still counting toward the total — the rows would have stopped adding up to the figure
+above them with nothing on screen to say why. TypeScript did not catch it: the list
+shape compiled fine. It is now an exhaustive `switch` with a `never` fallthrough, so a
+new account type fails the build until it is placed. Verified by adding a fake type.
+
+**Caught by a test rather than in review:** the endpoint created the person *before*
+validating the source account, so a failure left a half-made person behind. Nothing
+committed, so the session discarded it — but "no orphan survives" resting on transaction
+semantics is thin. It now validates everything before writing anything.
+
+Checked end to end: lend Sam 50, borrow 80 back, lend Alex 25, settle Alex. Sam nets to
+one balance of −30, the total never moves off 1000,00 €, no spending figure changes, and
+the visible Wealth rows sum to exactly the displayed total.
+
+Person accounts are filtered out of the capture sheet — you do not buy coffee "from Sam".
 
 ---
 

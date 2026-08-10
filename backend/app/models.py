@@ -263,7 +263,8 @@ class Account(UUIDPk, Timestamped, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('current','savings','cash','liability')", name="ck_accounts_type"
+            "type IN ('current','savings','cash','liability','person')",
+            name="ck_accounts_type",
         ),
         Index("ix_accounts_user", "user_id"),
         Index("uq_accounts_user_lower_name", "user_id", text("lower(name)"), unique=True),

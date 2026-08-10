@@ -13,6 +13,7 @@ import type {
   Features,
   Goal,
   InsightsSummary,
+  LendPayload,
   NlDraft,
   Transaction,
   TransactionCreate,
@@ -66,6 +67,16 @@ export function useUpdateAccount() {
     }: { id: string } & Partial<AccountCreate> & { archived?: boolean }) =>
       apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: json(body) }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['accounts'] }),
+  });
+}
+
+export function useLend() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: LendPayload) =>
+      apiFetch<Account>('/accounts/lend', { method: 'POST', body: json(body) }),
+    // Writes a transfer, so it moves balances and the activity list with it.
+    onSuccess: () => invalidateMoney(client),
   });
 }
 

@@ -128,7 +128,12 @@ function QuickAddSheet({ prefill, onClose }: { prefill?: CapturePrefill; onClose
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   const openAccounts = useMemo(
-    () => (accounts.data?.accounts ?? []).filter((a) => a.archived_at === null),
+    () =>
+      (accounts.data?.accounts ?? []).filter(
+        // People are excluded: you do not buy coffee "from Sam", and lending has its
+        // own screen where the direction and the wording actually make sense.
+        (a) => a.archived_at === null && a.type !== 'person',
+      ),
     [accounts.data],
   );
 

@@ -20,10 +20,45 @@ const TYPES: { value: AccountType; label: string; hint: string }[] = [
   { value: 'liability', label: 'Owed', hint: 'Credit card, overdraft' },
 ];
 
-const GROUPS: { label: string; types: AccountType[] }[] = [
-  { label: 'Liquid', types: ['current', 'savings', 'cash'] },
-  { label: 'Owed', types: ['liability'] },
-];
+type GroupKey = 'liquid' | 'owesYou' | 'youOwe' | 'owed';
+
+const GROUP_LABELS: Record<GroupKey, string> = {
+  liquid: 'Liquid',
+  owesYou: 'Owes you',
+  youOwe: 'You owe',
+  owed: 'Owed',
+};
+
+const GROUP_ORDER: GroupKey[] = ['liquid', 'owesYou', 'youOwe', 'owed'];
+
+/**
+ * Which section an account belongs in.
+ *
+ * A `switch` with a `never` fallthrough rather than a list of types per group. The
+ * list version compiled perfectly happily when `person` was added and rendered those
+ * accounts *nowhere* — while still counting them in the total, so the rows would have
+ * stopped adding up to the figure above them with nothing on screen to say why. This
+ * shape stops compiling until a new type is placed.
+ *
+ * People are grouped by the sign of what they owe, not by a label chosen when the
+ * account was made: a balance cannot go stale and a label can.
+ */
+function groupOf(account: Account): GroupKey {
+  switch (account.type) {
+    case 'current':
+    case 'savings':
+    case 'cash':
+      return 'liquid';
+    case 'liability':
+      return 'owed';
+    case 'person':
+      return account.balance_cents < 0 ? 'youOwe' : 'owesYou';
+    default: {
+      const unreachable: never = account.type;
+      return unreachable;
+    }
+  }
+}
 
 export function Wealth() {
   const accounts = useAccounts();
@@ -86,12 +121,16 @@ export function Wealth() {
         <Button onClick={() => setAdding(true)}>Add your first account</Button>
       )}
 
-      {GROUPS.map((group) => {
-        const inGroup = rows.filter((a) => group.types.includes(a.type));
+      {GROUP_ORDER.map((key) => {
+        const inGroup = rows.filter(
+          // A settled IOU is finished: it contributes nothing to the total, so hiding
+          // it costs no accuracy and keeps the list to live relationships.
+          (a) => groupOf(a) === key && !(a.type === 'person' && a.balance_cents === 0),
+        );
         if (!inGroup.length) return null;
         return (
-          <div key={group.label} className="flex flex-col gap-2.5">
-            <SectionLabel>{group.label}</SectionLabel>
+          <div key={key} className="flex flex-col gap-2.5">
+            <SectionLabel>{GROUP_LABELS[key]}</SectionLabel>
             <Card className="flex flex-col gap-4">
               {inGroup.map((account, i) => (
                 <AccountRow key={account.id} account={account} last={i === inGroup.length - 1} />
