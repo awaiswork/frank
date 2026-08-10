@@ -271,6 +271,48 @@ class Account(UUIDPk, Timestamped, Base):
     )
 
 
+class RecurringTemplate(UUIDPk, Timestamped, Base):
+    """A thing that repeats — rent, a salary, a subscription.
+
+    The template describes the schedule; occurrences whose date has arrived become
+    ordinary transactions, so every figure downstream sees them without knowing they
+    were generated. Future occurrences are not stored at all.
+
+    ``last_materialised_on`` is the occurrence date generation has reached, and it is
+    what makes deleting a generated row stick: asking the transactions table "is there
+    one for this date?" would recreate a row the user removed, silently, on the next
+    page load. Generation only ever moves forward from here.
+    """
+
+    __tablename__ = "recurring_templates"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    cadence: Mapped[str] = mapped_column(Text, nullable=False)
+    start_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    end_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    last_materialised_on: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('expense','income')", name="ck_recurring_kind"),
+        CheckConstraint("amount_cents > 0", name="ck_recurring_amount_positive"),
+        CheckConstraint("cadence IN ('weekly','monthly','yearly')", name="ck_recurring_cadence"),
+        CheckConstraint("end_on IS NULL OR end_on >= start_on", name="ck_recurring_end_after"),
+        Index("ix_recurring_user", "user_id"),
+    )
+
+
 class Transaction(UUIDPk, Timestamped, Base):
     __tablename__ = "transactions"
 
@@ -294,6 +336,12 @@ class Transaction(UUIDPk, Timestamped, Base):
     # One row makes half a transfer unrepresentable instead.
     counter_account_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
+    )
+    # Set on rows a recurring template generated. SET NULL rather than the RESTRICT
+    # used for accounts: deleting a template must not delete the rent you actually
+    # paid — that money moved. The rows stay and stop being attributed to a template.
+    recurring_template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("recurring_templates.id", ondelete="SET NULL"), nullable=True
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -323,12 +371,22 @@ class Transaction(UUIDPk, Timestamped, Base):
         ),
         CheckConstraint("amount_cents > 0", name="ck_transactions_amount_positive"),
         CheckConstraint(
-            "source IN ('manual','nl_parse','reconcile')", name="ck_transactions_source"
+            "source IN ('manual','nl_parse','reconcile','recurring')",
+            name="ck_transactions_source",
         ),
         Index("ix_transactions_user_occurred", "user_id", text("occurred_on DESC")),
         Index("ix_transactions_user_category", "user_id", "category_id"),
         Index("ix_transactions_account", "account_id"),
         Index("ix_transactions_counter_account", "counter_account_id"),
+        # Partial: only generated rows are constrained. This is the backstop against
+        # two concurrent reads both materialising the same occurrence.
+        Index(
+            "uq_transactions_recurrence",
+            "recurring_template_id",
+            "occurred_on",
+            unique=True,
+            postgresql_where=text("recurring_template_id IS NOT NULL"),
+        ),
     )
 
 

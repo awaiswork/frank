@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.deps import CurrentUser, DbSession, Today
+from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
 from app.schemas import (
     BurnRateOut,
     CategoryMoMOut,
@@ -25,7 +25,7 @@ from app.services.aggregates import (
 router = APIRouter(prefix="/insights", tags=["insights"])
 
 
-@router.get("/summary", response_model=InsightsSummaryOut)
+@router.get("/summary", response_model=InsightsSummaryOut, dependencies=[LedgerUpToDate])
 def summary(
     user: CurrentUser,
     db: DbSession,

@@ -32,7 +32,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 2a | Transfers | M | **Done** |
 | 2b | Refunds + reconcile | M | **Done** |
 | 3 | IOUs / informal lending | S | **Done** |
-| 4a | Recurring — templates + materialisation | M | Not started |
+| 4a | Recurring — templates + materialisation | L | **Done** |
 | 4b | Recurring — forecast into safe-to-spend | S | Not started |
 | 5 | Assets + net worth trend | M | Not started |
 | 6 | Weekly digest email | M | Not started |
@@ -350,32 +350,60 @@ Person accounts are filtered out of the capture sheet — you do not buy coffee 
 
 ---
 
-### Phase 4a — Recurring: templates + materialisation · M
+### Phase 4a — Recurring: templates + materialisation · L · **done**
 
-`recurring_templates` (amount, category, account, cadence, start, optional end,
-`is_variable`, `estimate_cents`) and `recurring_skips (template_id, occurrence_date)`.
+Rent stops needing typing. A template describes the schedule; occurrences whose date
+has arrived become **ordinary transactions**, so spending, budgets, balances and the
+daily note see them without knowing they were generated. Nothing in the future is
+stored, and nothing counts as spent before it has been.
 
-Materialise-on-read, following the `GET /advisor/daily` pattern: when a month is read,
-occurrences **whose date has arrived** are written as real `transactions` rows carrying
-`recurring_template_id` and `source = 'recurring'`. Future occurrences are computed on
-the fly and never stored.
+**Sized L, not M** — the backlog was optimistic. Two schema objects, date arithmetic, a
+write-on-read service with concurrency handling, a dependency plus its coverage test, a
+CRUD router and a screen, even after the cuts below.
 
-That single choice gives the semantics for free:
+**Two things cut, one for a reason worth keeping:**
 
-- *Edit this one* → edit the materialised transaction.
-- *Edit this and all future* → edit the template; past rows are real and unaffected.
-- *Skip one* → a `recurring_skips` row.
-- *Variable amount* → materialise the estimate, flag `needs_confirmation`, confirm on
-  arrival through the existing confirm-before-commit flow.
+- **Variable amounts.** Materialising an estimate creates a row that *looks* like a
+  transaction and isn't — it would land in `spend_by_category`, the burn rate and
+  safe-to-spend at a number the app **guessed**. That is the app asserting a figure it
+  does not know, which is what `income_known` exists to prevent one level down. A
+  design problem, not a bolt-on.
+- **Skip.** Skipping a future occurrence barely shows until forecasting exists, and
+  "this one didn't happen" is already covered by deleting the row. It belongs with 4b.
 
-**Double-materialisation is prevented by a constraint, not application logic:**
-`UNIQUE (recurring_template_id, occurred_on)`. Two concurrent GETs cannot both insert.
-Cap how far back one request will materialise so a long absence doesn't turn a single
-cold-start request into hundreds of inserts.
+**`last_materialised_on` is the design.** Asking the transactions table "is there a row
+for this date?" would resurrect an entry the user deleted, on their next page load, for
+ever. Generation only ever moves forward from that column, so a deleted row stays
+deleted — verified by sabotage, and by deleting a July rent and hammering every money
+route. It is also what keeps this cheap: the ordinary case is one indexed read
+returning nothing.
 
-*Schema:* `recurring_templates`, `recurring_skips`,
-`transactions.recurring_template_id` + `needs_confirmation`, `source` widened.
-*Risk:* medium — writes on GET.
+The **partial unique index** is the separate concern — two requests reading the same
+stale value would both insert; the database refuses the second.
+
+**Writes on GET, and a test so a route cannot be forgotten.** Materialised rows must
+exist before any money figure is computed, which is four routers plus the recurring
+list itself (its `next_on` is derived from how far generation has reached). A helper
+called in five places is four places to forget, so it is a dependency and
+`test_every_money_route_is_up_to_date` asserts every one of them declares it. Verified
+by removing it from `/insights/summary`.
+
+**Semantics that cost nothing.** Generated rows are ordinary transactions and generation
+only runs to today, so "edit this one" is editing a transaction and "edit this and all
+future" is editing the template — rows already written keep what was actually paid.
+`ON DELETE SET NULL` on the link, unlike `account_id`'s RESTRICT: deleting a template
+must not delete rent that really left.
+
+**Month-end clamping tracks the anchor**: the 31st becomes the 28th in February and
+returns to the 31st in March, rather than drifting down and staying there.
+
+*Schema:* migration `0011` — `recurring_templates`, `transactions.recurring_template_id`,
+the partial unique index, `source` gaining `recurring`. Additive, round-trips.
+
+**Worth knowing:** a backdated template generates its history, and those rows are dated
+before a new account's `opened_on`, so they count as spending but not against the
+balance. That is the Phase 1 ledger rule working correctly — the opening balance already
+reflects them — but it reads as surprising the first time.
 
 ---
 

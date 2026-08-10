@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession, Today
+from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
 from app.models import Account, Category, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
 from app.services.aggregates import month_bounds, parse_month
@@ -88,7 +88,7 @@ def _require_transfer_shape(
         )
 
 
-@router.get("", response_model=list[TransactionOut])
+@router.get("", response_model=list[TransactionOut], dependencies=[LedgerUpToDate])
 def list_transactions(
     user: CurrentUser,
     db: DbSession,

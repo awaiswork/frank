@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession, Today
+from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
 from app.models import Budget, Category
 from app.schemas import BudgetActualOut, BudgetUpsertIn
 from app.services.aggregates import budget_vs_actual, parse_month
@@ -30,7 +30,7 @@ def _owned_category(db: Session, user_id: uuid.UUID, category_id: uuid.UUID) -> 
     return cat
 
 
-@router.get("", response_model=list[BudgetActualOut])
+@router.get("", response_model=list[BudgetActualOut], dependencies=[LedgerUpToDate])
 def list_budgets(
     user: CurrentUser, db: DbSession, today: Today, month: MonthParam = None
 ) -> list[BudgetActualOut]:

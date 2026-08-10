@@ -86,6 +86,8 @@ export interface Transaction {
   account_id: string | null;
   /** The far side of a transfer; null for everything else. */
   counter_account_id: string | null;
+  /** Set when a recurring template generated this row; null once the template is gone. */
+  recurring_template_id: string | null;
   amount_cents: number;
   description: string;
   merchant: string | null;
@@ -104,6 +106,34 @@ export interface TransactionCreate {
   merchant?: string | null;
   occurred_on: string;
   category_id?: string | null;
+}
+
+export type Cadence = 'weekly' | 'monthly' | 'yearly';
+
+export interface Recurring {
+  id: string;
+  name: string;
+  kind: Kind;
+  amount_cents: number;
+  cadence: Cadence;
+  start_on: string;
+  end_on: string | null;
+  category_id: string | null;
+  account_id: string | null;
+  archived_at: string | null;
+  /** Derived from the schedule, so it can never disagree with it. Null once ended. */
+  next_on: string | null;
+}
+
+export interface RecurringCreate {
+  name: string;
+  kind?: Kind;
+  amount_cents: number;
+  cadence?: Cadence;
+  start_on?: string;
+  end_on?: string | null;
+  category_id?: string | null;
+  account_id?: string | null;
 }
 
 export interface BudgetActual {

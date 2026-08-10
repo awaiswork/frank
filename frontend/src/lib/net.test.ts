@@ -7,6 +7,7 @@ const tx = (kind: TransactionKind, amount_cents: number): Transaction => ({
   kind,
   account_id: 'a1',
   counter_account_id: kind === 'transfer' ? 'a2' : null,
+  recurring_template_id: null,
   amount_cents,
   description: 'x',
   merchant: null,
