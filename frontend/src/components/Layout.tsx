@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
-import { CaptureContext } from '../capture/CaptureContext';
+import { CaptureContext, type CapturePrefill } from '../capture/CaptureContext';
 import { hasOnboarded } from '../lib/onboarding';
 import { useModal } from '../lib/useModal';
 import { AmbientField } from './AmbientField';
@@ -15,6 +15,7 @@ type IconName =
   | 'advisor'
   | 'transactions'
   | 'wealth'
+  | 'lending'
   | 'budgets'
   | 'goals'
   | 'insight'
@@ -59,6 +60,14 @@ function Icon({ name }: { name: IconName }) {
           <rect x="2.5" y="6" width="19" height="13" rx="2.5" />
           <path d="M2.5 10h19" />
           <path d="M17 14.5h1.5" />
+        </svg>
+      );
+    case 'lending':
+      return (
+        <svg {...p}>
+          <path d="M4 8h13a3 3 0 0 1 0 6h-3" />
+          <path d="m8 4-4 4 4 4" />
+          <path d="m16 20 4-4-4-4" />
         </svg>
       );
     case 'budgets':
@@ -118,6 +127,7 @@ const PRIMARY: ReadonlyArray<readonly [string, string, IconName]> = [
 const RECORDS: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/transactions', 'Transactions', 'transactions'],
   ['/wealth', 'Wealth', 'wealth'],
+  ['/lending', 'Lending', 'lending'],
   ['/budgets', 'Budgets', 'budgets'],
   ['/goals', 'Goals', 'goals'],
   ['/insights', 'Insight', 'insight'],
@@ -166,11 +176,20 @@ export function Layout() {
   const [theme, toggleTheme] = useTheme();
   const { features, ready } = useFeatures();
   const [adding, setAdding] = useState(false);
+  const [prefill, setPrefill] = useState<CapturePrefill | undefined>(undefined);
   const [moreOpen, setMoreOpen] = useState(false);
   const advisorSoon = ready && !features.advisor;
 
   // The one handle screens get on the capture sheet, so there is only ever one.
-  const capture = useMemo(() => ({ open: () => setAdding(true) }), []);
+  const capture = useMemo(
+    () => ({
+      open: (next?: CapturePrefill) => {
+        setPrefill(next);
+        setAdding(true);
+      },
+    }),
+    [],
+  );
 
   // MoreSheet is reachable only from the mobile tab bar and hides itself at lg.
   // Widening the window past that would leave it mounted but display:none —
@@ -392,7 +411,7 @@ export function Layout() {
         />
       )}
 
-      <QuickAdd open={adding} onClose={() => setAdding(false)} />
+      <QuickAdd open={adding} prefill={prefill} onClose={() => setAdding(false)} />
     </CaptureContext.Provider>
   );
 }
@@ -452,6 +471,7 @@ function MoreSheet({
   const items: ReadonlyArray<readonly [string, string, IconName]> = [
     ['/advisor', 'Ask Frankly', 'advisor'],
     ['/wealth', 'Wealth', 'wealth'],
+    ['/lending', 'Lending', 'lending'],
     ['/goals', 'Goals', 'goals'],
     ['/insights', 'Insight', 'insight'],
     ['/settings', 'Settings', 'settings'],

@@ -14,6 +14,7 @@ import { Register } from './pages/Register';
 import { ResetPassword } from './pages/ResetPassword';
 import { Settings } from './pages/Settings';
 import { Transactions } from './pages/Transactions';
+import { Lending } from './pages/Lending';
 import { Wealth } from './pages/Wealth';
 import { VerifyCode } from './pages/VerifyCode';
 
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/wealth" element={<Wealth />} />
+          <Route path="/lending" element={<Lending />} />
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/goals" element={<Goals />} />
           <Route path="/advisor" element={<Advisor />} />

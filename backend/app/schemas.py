@@ -13,7 +13,17 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 # a transfer, and its own DB CHECK says so. Kept separate from TransactionKind so
 # widening what a *transaction* can be does not quietly widen those.
 Kind = Literal["expense", "income"]
-TransactionKind = Literal["expense", "income", "transfer"]
+TransactionKind = Literal[
+    "expense",
+    "income",
+    "transfer",
+    # A returned purchase: gives back spending rather than counting as income.
+    "refund",
+    # A reconciliation against the real balance. Two kinds so `amount_cents` stays a
+    # positive magnitude and the direction keeps living in the kind.
+    "adjustment_up",
+    "adjustment_down",
+]
 
 
 class RegisterIn(BaseModel):
@@ -109,7 +119,16 @@ class UserUpdate(BaseModel):
         return v
 
 
-AccountType = Literal["current", "savings", "cash", "liability"]
+AccountType = Literal[
+    "current",
+    "savings",
+    "cash",
+    "liability",
+    # Someone you have lent to or borrowed from. One type, not a receivable/payable
+    # pair: the direction is the sign of the balance, so a person you have both lent
+    # to and borrowed from stays one relationship with one number.
+    "person",
+]
 
 
 class AccountCreate(BaseModel):
@@ -141,6 +160,26 @@ class AccountOut(BaseModel):
     # Derived, never stored — see services/accounts.py.
     balance_cents: int
     entry_count: int
+
+
+class LendIn(BaseModel):
+    """Lend to, or borrow from, someone — in one step so no half-made person survives."""
+
+    person: str = Field(min_length=1, max_length=80)
+    amount_cents: int = Field(gt=0)
+    # The account the money actually moves through.
+    account_id: uuid.UUID
+    # True when they are handing money to you, i.e. you are borrowing.
+    borrowing: bool = False
+    occurred_on: dt.date | None = None
+    description: str | None = Field(default=None, max_length=500)
+
+
+class ReconcileIn(BaseModel):
+    """ "The real balance is X." The difference becomes a visible correction."""
+
+    actual_balance_cents: int
+    occurred_on: dt.date | None = None  # None -> the user's today
 
 
 class AccountsOut(BaseModel):

@@ -126,7 +126,7 @@ export function Transactions() {
           </div>
           {!q && !categoryId && (
             <button
-              onClick={capture.open}
+              onClick={() => capture.open()}
               className="mt-5 inline-flex h-11 items-center justify-center rounded-input bg-ink px-5 text-[14.5px] font-semibold text-paper hover:opacity-90"
             >
               Log your first one
@@ -191,8 +191,11 @@ function Row({
   accountNames: Map<string, string>;
 }) {
   const del = useDeleteTransaction();
+  const capture = useCapture();
   const income = tx.kind === 'income';
   const transfer = tx.kind === 'transfer';
+  const refund = tx.kind === 'refund';
+  const correction = tx.kind === 'adjustment_up' || tx.kind === 'adjustment_down';
   const label = tx.merchant ?? tx.description;
 
   // For a transfer the two accounts *are* the information — "moved between accounts"
@@ -204,7 +207,12 @@ function Row({
     ? from && to
       ? `${from} → ${to}`
       : 'Moved between accounts'
-    : (category?.name ?? 'Uncategorised');
+    : correction
+      ? // Says what it is without pretending to know why the ledger drifted.
+        `Balance correction${from ? ` · ${from}` : ''}`
+      : refund
+        ? `Refunded${category ? ` · ${category.name}` : ''}`
+        : (category?.name ?? 'Uncategorised');
   return (
     <div className="group flex items-center gap-[13px] border-b border-line px-4 py-[13px] last:border-0">
       <CategoryAvatar
@@ -229,6 +237,33 @@ function Row({
           {subtitle}
         </div>
       </div>
+      {/* You refund *a purchase*, so this opens on that purchase's amount, category
+          and account. Retyping what the row already says would be more work and less
+          accurate. Offered only on spending — there is nothing to give back on income,
+          a move between accounts, or a correction. */}
+      {tx.kind === 'expense' && (
+        <button
+          type="button"
+          aria-label="Refund this"
+          onClick={() =>
+            capture.open({
+              kind: 'refund',
+              amountCents: tx.amount_cents,
+              categoryId: tx.category_id,
+              accountId: tx.account_id,
+              description: tx.merchant ?? tx.description,
+            })
+          }
+          // `hidden` below sm, not merely transparent: an invisible button still
+          // reserves its width, and on a 320px row that width comes straight out of
+          // the merchant name — "jacket" was rendering as "j…". Above sm there is room
+          // for it to sit invisible until hover. Phones reach a refund through the
+          // capture sheet's own Refund mode instead.
+          className="hidden text-[12px] font-semibold text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-ink-2 sm:inline-block"
+        >
+          Refund
+        </button>
+      )}
       <button
         type="button"
         aria-label="Delete transaction"
@@ -239,10 +274,17 @@ function Row({
         ×
       </button>
       <Money
-        cents={transfer ? tx.amount_cents : income ? tx.amount_cents : -tx.amount_cents}
-        signed={income}
-        // Neither a gain nor a loss, so it gets neither colour and no sign.
-        tone={transfer ? 'muted' : income ? 'go' : 'default'}
+        cents={
+          transfer || correction
+            ? tx.amount_cents
+            : income || refund
+              ? tx.amount_cents
+              : -tx.amount_cents
+        }
+        signed={income || refund}
+        // A refund is money coming back, so it reads like income. A transfer or a
+        // correction is neither a gain nor a loss, so it gets no colour and no sign.
+        tone={transfer || correction ? 'muted' : income || refund ? 'go' : 'default'}
         className="!text-[15.5px] font-semibold"
       />
     </div>

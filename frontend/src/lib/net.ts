@@ -15,7 +15,14 @@ import type { Transaction, TransactionKind } from '../api/types';
 export const NET_SIGNS: Record<TransactionKind, number> = {
   income: 1,
   expense: -1,
+  // Moving your own money is neither a gain nor a loss on the day it happens.
   transfer: 0,
+  // A refund undoes spending, so it lifts the day's net back up by what it gives back.
+  refund: 1,
+  // Corrections are the ledger admitting it drifted, not something that happened to
+  // the user's money that day. They move a balance and nothing else.
+  adjustment_up: 0,
+  adjustment_down: 0,
 };
 
 /** Signed total for a day's transactions — income up, spending down, moves neutral. */

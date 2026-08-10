@@ -10,12 +10,20 @@ import datetime as dt
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.deps import CurrentUser, DbSession, Today
-from app.models import Account, User
-from app.schemas import AccountCreate, AccountOut, AccountsOut, AccountUpdate
+from app.models import Account, Transaction, User
+from app.schemas import (
+    AccountCreate,
+    AccountOut,
+    AccountsOut,
+    AccountUpdate,
+    LendIn,
+    ReconcileIn,
+)
 from app.services.accounts import balances, earliest_opened_on, has_entries
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -123,6 +131,129 @@ def update_account(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "You already have an account with that name"
         ) from exc
+    return _one(db, user.id, account_id)
+
+
+@router.post("/lend", response_model=AccountOut, status_code=status.HTTP_201_CREATED)
+def lend(body: LendIn, user: CurrentUser, db: DbSession, today: Today) -> AccountOut:
+    """Lend money to someone, or borrow it from them, as one transfer.
+
+    Create-the-person and move-the-money in a single transaction on purpose. As two
+    calls from the client, a failure between them leaves an account named after someone
+    who owes you nothing — and unexplained debris in a list of who owes you money is
+    what stops the list being worth reading.
+
+    The person is found case-insensitively by name, matching how account names are
+    already unique, so lending to Sam twice builds one running balance rather than a
+    second Sam.
+    """
+    # Validate before writing anything. Creating the person first and checking the
+    # source account after leaves a row already flushed when the check fails — the
+    # session discards it, but only because nothing committed, which is a thin thing
+    # for "no half-made person survives" to rest on.
+    source = _owned_account(db, user.id, body.account_id)
+    if source.archived_at is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That account is archived")
+
+    name = body.person.strip()
+    person = db.scalar(
+        select(Account).where(
+            Account.user_id == user.id,
+            func.lower(Account.name) == name.lower(),
+        )
+    )
+    if person is not None and person.type != "person":
+        # Otherwise "lend to Savings" would quietly recast a savings account as a person.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"You already have an account called {person.name}.",
+        )
+
+    if person is None:
+        person = Account(
+            user_id=user.id,
+            name=name,
+            type="person",
+            currency=user.currency.upper(),
+            opening_balance_cents=0,
+            # Their ledger starts here; anything owed from before is what an opening
+            # balance is for.
+            opened_on=body.occurred_on or today,
+        )
+        db.add(person)
+        db.flush()
+    elif person.archived_at is not None:
+        # Lending again is the same relationship resuming, not a second one.
+        person.archived_at = None
+
+    # Borrowing runs the other way: money leaves them and lands with you, which drives
+    # their balance negative — the sign that says you owe rather than are owed.
+    from_account, to_account = (person, source) if body.borrowing else (source, person)
+    db.add(
+        Transaction(
+            user_id=user.id,
+            kind="transfer",
+            account_id=from_account.id,
+            counter_account_id=to_account.id,
+            amount_cents=body.amount_cents,
+            description=body.description
+            or (f"Borrowed from {person.name}" if body.borrowing else f"Lent to {person.name}"),
+            occurred_on=body.occurred_on or today,
+        )
+    )
+    db.commit()
+    return _one(db, user.id, person.id)
+
+
+@router.post("/{account_id}/reconcile", response_model=AccountOut)
+def reconcile_account(
+    account_id: uuid.UUID,
+    body: ReconcileIn,
+    user: CurrentUser,
+    db: DbSession,
+    today: Today,
+) -> AccountOut:
+    """Record the gap between what we computed and what the bank actually says.
+
+    Written as a transaction, not as a quiet edit to `opening_balance_cents`. That
+    column means "the balance at the start of `opened_on`" — absorbing today's drift
+    into it would make the statement false, silently move every past balance, and
+    leave nothing on screen to say a correction ever happened. A balance that changes
+    for no visible reason is exactly the failure this app exists not to have.
+    """
+    account = _owned_account(db, user.id, account_id)
+    if account.archived_at is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That account is archived")
+
+    current = next(
+        (
+            row.balance_cents
+            for row in balances(db, user.id, include_archived=True)
+            if row.account.id == account_id
+        ),
+        None,
+    )
+    if current is None:  # pragma: no cover — ownership was just established
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Account not found")
+
+    delta = body.actual_balance_cents - current
+    if delta == 0:
+        # Nothing drifted. Writing a zero-amount row would fail the positivity check
+        # anyway, and a correction of nothing is not worth a line in someone's history.
+        return _one(db, user.id, account_id)
+
+    db.add(
+        Transaction(
+            user_id=user.id,
+            account_id=account_id,
+            kind="adjustment_up" if delta > 0 else "adjustment_down",
+            amount_cents=abs(delta),
+            description="Balance correction",
+            occurred_on=body.occurred_on or today,
+            source="reconcile",
+        )
+    )
+    db.commit()
     return _one(db, user.id, account_id)
 
 

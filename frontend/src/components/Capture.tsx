@@ -214,7 +214,7 @@ function ManualCapture() {
         takes a couple of seconds.
       </FranklyCallout>
 
-      <Button type="button" onClick={capture.open} className="w-full">
+      <Button type="button" onClick={() => capture.open()} className="w-full">
         Log an expense
       </Button>
     </div>

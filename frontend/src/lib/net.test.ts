@@ -33,6 +33,21 @@ describe('dayNet', () => {
     expect(dayNet([tx('transfer', 50_00), tx('transfer', 25_00)])).toBe(0);
   });
 
+  it('counts a refund as spending given back', () => {
+    // Not income — it lifts the day's net by undoing a purchase, and the category
+    // aggregate on the server gives back the spend at the same time.
+    expect(dayNet([tx('expense', 40_00), tx('refund', 40_00)])).toBe(0);
+  });
+
+  it('ignores balance corrections', () => {
+    // A reconciliation is the ledger admitting it drifted, not money that arrived or
+    // left that day. It moves a balance and nothing else.
+    const spending = [tx('expense', 40_00)];
+    expect(dayNet([...spending, tx('adjustment_up', 5_00), tx('adjustment_down', 9_00)])).toBe(
+      dayNet(spending),
+    );
+  });
+
   it('is zero for an empty day', () => {
     expect(dayNet([])).toBe(0);
   });

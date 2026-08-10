@@ -17,7 +17,6 @@ that without noticing.
 from __future__ import annotations
 
 import datetime as dt
-import re
 import uuid
 
 import pytest
@@ -209,16 +208,10 @@ def test_malformed_transfers_are_unrepresentable(
     db.rollback()
 
 
-def test_the_kind_check_names_exactly_what_we_support(db: Session) -> None:
-    from sqlalchemy import text
-
-    source = db.scalar(
-        text(
-            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
-            "WHERE conname = 'ck_transactions_kind'"
-        )
-    )
-    assert set(re.findall(r"'([a-z_]+)'", str(source))) == {"expense", "income", "transfer"}
+# The kind vocabulary used to be pinned here as an exact set. That moved to
+# `test_refunds.test_spend_signs_are_an_allow_list`, which asserts the same names *and*
+# which side of the spending line each falls on — strictly more than this said, and one
+# place to update instead of two.
 
 
 # --- through the API ---------------------------------------------------------

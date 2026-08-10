@@ -7,6 +7,7 @@ import {
   useTransactions,
 } from '../api/hooks';
 import type { Kind, TransactionKind } from '../api/types';
+import type { CapturePrefill } from '../capture/CaptureContext';
 import { useAuth } from '../auth/useAuth';
 import { lastAccount, rememberAccount } from '../lib/lastAccount';
 import { categoryColor, categoryTint } from '../lib/categoryColor';
@@ -21,7 +22,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'] as c
 
 const TOP_CATEGORIES = 6;
 
-const KINDS = ['expense', 'income', 'transfer'] as const;
+const KINDS = ['expense', 'income', 'refund', 'transfer'] as const;
 
 /** True on touch-first devices, where we drive the amount with our own keypad so
  *  the OS keyboard doesn't cover the sheet. */
@@ -52,14 +53,22 @@ interface Logged {
  * back to do; burying it under the dashboard was what made it feel like a chore.
  * Everything here writes to POST /transactions, so it works with or without the AI.
  */
-export function QuickAdd({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function QuickAdd({
+  open,
+  prefill,
+  onClose,
+}: {
+  open: boolean;
+  prefill?: CapturePrefill;
+  onClose: () => void;
+}) {
   // Mounted only while open, so every visit starts on a blank form by construction
   // rather than by resetting state after the fact.
   if (!open) return null;
-  return <QuickAddSheet onClose={onClose} />;
+  return <QuickAddSheet prefill={prefill} onClose={onClose} />;
 }
 
-function QuickAddSheet({ onClose }: { onClose: () => void }) {
+function QuickAddSheet({ prefill, onClose }: { prefill?: CapturePrefill; onClose: () => void }) {
   const { user } = useAuth();
   const categories = useCategories();
   const accounts = useAccounts();
@@ -68,14 +77,16 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   const remove = useDeleteTransaction();
   const coarse = useCoarsePointer();
 
-  const [amount, setAmount] = useState('');
-  const [kind, setKind] = useState<TransactionKind>('expense');
-  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [amount, setAmount] = useState(
+    prefill?.amountCents != null ? String(prefill.amountCents / 100).replace('.', ',') : '',
+  );
+  const [kind, setKind] = useState<TransactionKind>(prefill?.kind ?? 'expense');
+  const [categoryId, setCategoryId] = useState<string | null>(prefill?.categoryId ?? null);
   // Only what the user actually tapped. The account in force is derived below, so
   // there is no effect racing the accounts query to seed it.
-  const [pickedAccount, setPickedAccount] = useState<string | null>(null);
+  const [pickedAccount, setPickedAccount] = useState<string | null>(prefill?.accountId ?? null);
   const [pickedCounter, setPickedCounter] = useState<string | null>(null);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(prefill?.description ?? '');
   const [occurredOn, setOccurredOn] = useState(todayISO);
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +98,7 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
 
   // A transfer has no categories at all, so ranking falls back to the expense list
   // rather than being asked to rank against a kind no category can have.
+  // A refund undoes an expense, so it picks from the expense categories.
   const categoryKind: Kind = kind === 'income' ? 'income' : 'expense';
   const ranked = useMemo(
     () => rankCategories(categories.data ?? [], transactions.data ?? [], categoryKind),
@@ -116,13 +128,19 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   const openAccounts = useMemo(
-    () => (accounts.data?.accounts ?? []).filter((a) => a.archived_at === null),
+    () =>
+      (accounts.data?.accounts ?? []).filter(
+        // People are excluded: you do not buy coffee "from Sam", and lending has its
+        // own screen where the direction and the wording actually make sense.
+        (a) => a.archived_at === null && a.type !== 'person',
+      ),
     [accounts.data],
   );
 
   // Money leaves an account on an expense and lands in one on income. Saying "from"
   // both ways would be wrong, and it is what lets a transfer read as "from X to Y".
-  const preposition = kind === 'income' ? 'to' : 'from';
+  // Money leaves an account on an expense, and lands in one on income or a refund.
+  const preposition = kind === 'income' || kind === 'refund' ? 'to' : 'from';
 
   // Derived rather than seeded in an effect: the accounts arrive after first paint,
   // and an effect that writes state would render one frame with nothing selected.
@@ -175,7 +193,7 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
           description.trim() ||
           (kind === 'transfer' ? 'Moved between accounts' : null) ||
           category?.name ||
-          (kind === 'income' ? 'Income' : 'Expense'),
+          (kind === 'income' ? 'Income' : kind === 'refund' ? 'Refund' : 'Expense'),
         kind,
         occurred_on: occurredOn,
         category_id: kind === 'transfer' ? null : categoryId,

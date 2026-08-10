@@ -3,9 +3,10 @@
 /** A category is only ever one of these two, and its own DB CHECK says so. */
 export type Kind = 'expense' | 'income';
 
-/** What a transaction can be. Wider than Kind: money can also move between your own
- *  accounts, which is neither spending nor income. */
-export type TransactionKind = Kind | 'transfer';
+/** What a transaction can be. Wider than Kind: money can move between your own
+ *  accounts, come back from a returned purchase, or be corrected against a real
+ *  balance — none of which is spending or income. */
+export type TransactionKind = Kind | 'transfer' | 'refund' | 'adjustment_up' | 'adjustment_down';
 
 export interface TokenOut {
   access_token: string;
@@ -37,7 +38,10 @@ export interface Category {
   color: string | null;
 }
 
-export type AccountType = 'current' | 'savings' | 'cash' | 'liability';
+/** `person` is someone you have lent to or borrowed from. One type rather than a
+ *  receivable/payable pair: the direction is the sign of the balance, so a person you
+ *  have both lent to and borrowed from stays one relationship with one number. */
+export type AccountType = 'current' | 'savings' | 'cash' | 'liability' | 'person';
 
 export interface Account {
   id: string;
@@ -57,6 +61,15 @@ export interface AccountsPayload {
   total_cents: number;
   /** null until the first account exists. Balances only count entries from here on. */
   ledger_starts_on: string | null;
+}
+
+export interface LendPayload {
+  person: string;
+  amount_cents: number;
+  account_id: string;
+  /** True when they are handing money to you, i.e. you are borrowing. */
+  borrowing?: boolean;
+  description?: string;
 }
 
 export interface AccountCreate {

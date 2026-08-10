@@ -1,8 +1,24 @@
 import { createContext } from 'react';
+import type { TransactionKind } from '../api/types';
+
+/**
+ * Fields the sheet should open on, when a screen knows better than a blank form.
+ *
+ * A refund is the case this exists for: you refund *a purchase*, so opening on that
+ * purchase's amount, category and account is both less typing and more honest than
+ * asking someone to retype what the row already says.
+ */
+export interface CapturePrefill {
+  kind?: TransactionKind;
+  amountCents?: number;
+  categoryId?: string | null;
+  accountId?: string | null;
+  description?: string;
+}
 
 export interface CaptureContextValue {
   /** Open the quick-add sheet. Callable from any screen under <Layout>. */
-  open: () => void;
+  open: (prefill?: CapturePrefill) => void;
 }
 
 /**

@@ -12,11 +12,52 @@ import datetime as dt
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Subquery
 
 from app.models import Budget, Category, GoalContribution, SavingsGoal, Transaction
+
+# --- What counts as spending ------------------------------------------------
+#
+# A refund is a returned purchase, so it *undoes* spending rather than being income:
+# it gives back the category's spend, the budget's allowance and the burn rate, and
+# leaves what someone earned alone.
+#
+# Every aggregate below filters kind with an **allow-list** — `IN (SPEND_SIGNS)` here,
+# `== "income"` for the one income sum. Never a deny-list. `!= "income"` would silently
+# sweep in transfers, adjustments, and whatever gets added next; an allow-list leaves
+# an unconsidered kind outside every figure by default, which is what made transfers
+# free to introduce. `test_spend_signs_are_an_allow_list` holds the line.
+SPEND_SIGNS: dict[str, int] = {"expense": 1, "refund": -1}
+
+
+def _is_spend() -> ColumnElement[bool]:
+    """The allow-list, as a predicate. Nothing outside it reaches a spending figure."""
+    return Transaction.kind.in_(tuple(SPEND_SIGNS))
+
+
+def _spent() -> ColumnElement[int]:
+    """``SUM(±amount_cents)`` over spending — refunds subtract.
+
+    Signed in one place rather than five, so the rule has a single home. Note this can
+    legitimately come out **negative**: return something bought last month and this
+    month's spend in that category really is below zero. Reporting it as zero would be
+    a small lie and would stop the categories summing to the month.
+    """
+    return func.coalesce(
+        func.sum(
+            case(
+                *(
+                    (Transaction.kind == kind, Transaction.amount_cents * sign)
+                    for kind, sign in SPEND_SIGNS.items()
+                ),
+                else_=None,
+            )
+        ),
+        0,
+    )
+
 
 # --- Period boundaries -------------------------------------------------------
 #
@@ -88,17 +129,17 @@ def spend_by_category(db: Session, user_id: uuid.UUID, month_start: dt.date) -> 
             Transaction.category_id,
             Category.name,
             Category.color,
-            func.coalesce(func.sum(Transaction.amount_cents), 0).label("spent"),
+            _spent().label("spent"),
         )
         .join(Category, Category.id == Transaction.category_id, isouter=True)
         .where(
             Transaction.user_id == user_id,
-            Transaction.kind == "expense",
+            _is_spend(),
             Transaction.occurred_on >= start,
             Transaction.occurred_on < end,
         )
         .group_by(Transaction.category_id, Category.name, Category.color)
-        .order_by(func.sum(Transaction.amount_cents).desc())
+        .order_by(_spent().desc())
     )
     return [
         CategorySpend(
@@ -130,11 +171,11 @@ def _spend_per_category_subquery(user_id: uuid.UUID, start: dt.date, end: dt.dat
     return (
         select(
             Transaction.category_id.label("category_id"),
-            func.coalesce(func.sum(Transaction.amount_cents), 0).label("spent"),
+            _spent().label("spent"),
         )
         .where(
             Transaction.user_id == user_id,
-            Transaction.kind == "expense",
+            _is_spend(),
             Transaction.occurred_on >= start,
             Transaction.occurred_on < end,
         )
@@ -231,10 +272,10 @@ def safe_to_spend(
         .scalar_subquery()
     )
     spent = (
-        select(func.coalesce(func.sum(Transaction.amount_cents), 0))
+        select(_spent())
         .where(
             Transaction.user_id == user_id,
-            Transaction.kind == "expense",
+            _is_spend(),
             Transaction.occurred_on >= start,
             Transaction.occurred_on < end,
         )
@@ -314,9 +355,9 @@ def daily_burn_rate(db: Session, user_id: uuid.UUID, *, today: dt.date, days: in
     """Average daily expense over the trailing ``days`` window (default 30)."""
     window_start = today - dt.timedelta(days=days - 1)
     total = db.scalar(
-        select(func.coalesce(func.sum(Transaction.amount_cents), 0)).where(
+        select(_spent()).where(
             Transaction.user_id == user_id,
-            Transaction.kind == "expense",
+            _is_spend(),
             Transaction.occurred_on >= window_start,
             Transaction.occurred_on <= today,
         )
@@ -352,9 +393,9 @@ def month_over_month_by_category(
         select(
             Transaction.category_id.label("category_id"),
             month_expr.label("month"),
-            func.sum(Transaction.amount_cents).label("spent"),
+            _spent().label("spent"),
         )
-        .where(Transaction.user_id == user_id, Transaction.kind == "expense")
+        .where(Transaction.user_id == user_id, _is_spend())
         .group_by(Transaction.category_id, month_expr)
         .subquery()
     )
