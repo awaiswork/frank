@@ -149,7 +149,7 @@ export function Home() {
                       </div>
                     </div>
                     <Money
-                      cents={income ? t.amount_cents : -t.amount_cents}
+                      cents={income ? t.base_amount_cents : -t.base_amount_cents}
                       signed={income}
                       tone={income ? 'go' : 'default'}
                       className="!text-[16px] font-semibold"

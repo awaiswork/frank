@@ -27,5 +27,8 @@ export const NET_SIGNS: Record<TransactionKind, number> = {
 
 /** Signed total for a day's transactions — income up, spending down, moves neutral. */
 export function dayNet(items: readonly Transaction[]): number {
-  return items.reduce((total, t) => total + NET_SIGNS[t.kind] * t.amount_cents, 0);
+  // base_amount_cents, for the same reason every server aggregate uses it: a day's net
+  // adds figures together, and only what actually left your account is comparable. A
+  // foreign amount here would put dollars into a euro total.
+  return items.reduce((total, t) => total + NET_SIGNS[t.kind] * t.base_amount_cents, 0);
 }

@@ -298,6 +298,32 @@ class NotificationSetting(UUIDPk, Timestamped, Base):
     )
 
 
+class FxRate(UUIDPk, Timestamped, Base):
+    """A published rate, kept so a new transaction has something honest to convert with.
+
+    ``rate`` is **base units per one quote unit** — `base_amount = amount * rate`, the
+    same direction as `Transaction.fx_rate`. Two conventions in one codebase is how a
+    figure ends up inverted with nobody noticing, so there is only one.
+
+    Never used to recompute anything already recorded: `base_amount_cents` is frozen
+    when its row is written, and this table has no say over it afterwards.
+    """
+
+    __tablename__ = "fx_rates"
+
+    base: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    quote: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    rate_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("rate > 0", name="ck_fx_rates_positive"),
+        CheckConstraint("base <> quote", name="ck_fx_rates_distinct"),
+        UniqueConstraint("base", "quote", "rate_on", name="uq_fx_rate_day"),
+        Index("ix_fx_rates_pair_day", "base", "quote", "rate_on"),
+    )
+
+
 class Asset(UUIDPk, Timestamped, Base):
     """Something owned that has no ledger — a car, a flat, a fund held elsewhere.
 

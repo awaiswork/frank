@@ -86,6 +86,10 @@ function QuickAddSheet({ prefill, onClose }: { prefill?: CapturePrefill; onClose
   // there is no effect racing the accounts query to seed it.
   const [pickedAccount, setPickedAccount] = useState<string | null>(prefill?.accountId ?? null);
   const [pickedCounter, setPickedCounter] = useState<string | null>(null);
+  // Empty means your own money, which is almost always the answer — so the field only
+  // appears once someone says otherwise, rather than sitting in the way of every log.
+  const [foreignCode, setForeignCode] = useState('');
+  const [foreignCharged, setForeignCharged] = useState('');
   const [description, setDescription] = useState(prefill?.description ?? '');
   const [occurredOn, setOccurredOn] = useState(todayISO);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -106,6 +110,7 @@ function QuickAddSheet({ prefill, onClose }: { prefill?: CapturePrefill; onClose
   );
   const visible = showAllCategories ? ranked : ranked.slice(0, TOP_CATEGORIES);
   const cents = parseAmountToCents(amount);
+  const chargedCents = foreignCode.trim() ? parseAmountToCents(foreignCharged) : null;
 
   function reset() {
     setAmount('');
@@ -195,6 +200,10 @@ function QuickAddSheet({ prefill, onClose }: { prefill?: CapturePrefill; onClose
           category?.name ||
           (kind === 'income' ? 'Income' : kind === 'refund' ? 'Refund' : 'Expense'),
         kind,
+        currency: foreignCode.trim() ? foreignCode.trim().toUpperCase() : undefined,
+        // What the statement says actually left the account. Better evidence than any
+        // published rate, so it wins when given.
+        base_amount_cents: chargedCents ?? undefined,
         occurred_on: occurredOn,
         category_id: kind === 'transfer' ? null : categoryId,
         account_id: accountId,
@@ -376,6 +385,56 @@ function QuickAddSheet({ prefill, onClose }: { prefill?: CapturePrefill; onClose
                   )}
                 </div>
               )}
+
+              {/* Paid in something else? Off the main path on purpose: almost every
+                  entry is in your own money, and a currency field in front of every one
+                  of them would tax the common case to serve the rare one. */}
+              <div className="flex flex-wrap items-center justify-center gap-2 px-4 pb-4">
+                {!foreignCode ? (
+                  <button
+                    type="button"
+                    onClick={() => setForeignCode('USD')}
+                    className="text-[13px] text-muted underline underline-offset-2 hover:text-ink"
+                  >
+                    Paid in another currency?
+                  </button>
+                ) : (
+                  <>
+                    <input
+                      value={foreignCode}
+                      onChange={(e) => setForeignCode(e.target.value.toUpperCase().slice(0, 3))}
+                      aria-label="Currency"
+                      placeholder="USD"
+                      className="num h-9 w-16 rounded-input border border-line-2 bg-field px-2 text-center text-[13px] text-ink-2 uppercase focus:outline-none"
+                    />
+                    <input
+                      value={foreignCharged}
+                      onChange={(e) => setForeignCharged(e.target.value)}
+                      inputMode="decimal"
+                      aria-label="Charged in your currency"
+                      placeholder="charged"
+                      className="num h-9 w-24 rounded-input border border-line-2 bg-field px-2.5 text-[13px] text-ink-2 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForeignCode('');
+                        setForeignCharged('');
+                      }}
+                      className="text-[13px] text-muted underline underline-offset-2 hover:text-ink"
+                    >
+                      cancel
+                    </button>
+                    {/* Says which number wins, so nobody wonders why the total does not
+                        match the rate they looked up. */}
+                    <p className="w-full text-center text-[12.5px] text-muted">
+                      {chargedCents
+                        ? 'Frankly will use what you were charged.'
+                        : "Leave blank and Frankly uses the day's published rate."}
+                    </p>
+                  </>
+                )}
+              </div>
 
               {/* Categories — one tap, most-used first. Absent for a transfer: a
                   category is how spend reaches a budget, and moving your own money

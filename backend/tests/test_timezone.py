@@ -15,12 +15,14 @@ from fastapi.testclient import TestClient
 from app.deps import today_in
 from tests.conftest import create_account
 
-# 25 hours apart, so their local dates differ at *every* instant. That is what makes
-# the endpoint test below deterministic without freezing the clock.
+# 25 hours apart, so their local dates differ at *every* instant — which is what lets the
+# endpoint test below run against the real clock. It does not make the *size* of the gap
+# constant; see that test.
 FAR_EAST = "Pacific/Kiritimati"  # UTC+14
 FAR_WEST = "Pacific/Niue"  # UTC-11
 
-# Midnight UTC: the east is already tomorrow afternoon, the west still yesterday.
+# Just past midnight UTC: the east is well into that afternoon, the west still on
+# yesterday evening. Fixed, so the helper's own tests never depend on when they run.
 MOMENT = dt.datetime(2026, 8, 10, 0, 30, tzinfo=dt.UTC)
 
 
@@ -71,7 +73,15 @@ def test_patch_me_rejects_an_unknown_timezone(client: TestClient) -> None:
 def test_daily_note_is_dated_in_the_users_timezone(client: TestClient) -> None:
     """The endpoint honours it, not just the helper.
 
-    Two accounts 25 hours apart must never agree on what day it is, whenever this runs.
+    Two accounts 25 hours apart must never agree on what day it is, whenever this runs —
+    that disagreement is the whole assertion, and it is what a server-clock date could
+    not produce.
+
+    The gap is one day for twenty-three hours out of every twenty-four and **two days for
+    the other one**: 25 hours of separation spans two date boundaries, so between 10:00
+    and 11:00 UTC the east has reached tomorrow while the west is still on yesterday.
+    Pinning it to exactly one day passed locally, passed in review, and failed in CI at
+    10:47 UTC. Do not tighten this back.
     """
     east = create_account(client, "east@example.com")
     west = create_account(client, "west@example.com")
@@ -81,7 +91,7 @@ def test_daily_note_is_dated_in_the_users_timezone(client: TestClient) -> None:
     east_date = client.get("/advisor/daily", headers=_h(east)).json()["date"]
     west_date = client.get("/advisor/daily", headers=_h(west)).json()["date"]
 
-    assert east_date != west_date
-    assert dt.date.fromisoformat(east_date) - dt.date.fromisoformat(west_date) == dt.timedelta(
-        days=1
+    gap = dt.date.fromisoformat(east_date) - dt.date.fromisoformat(west_date)
+    assert gap in (dt.timedelta(days=1), dt.timedelta(days=2)), (
+        f"east {east_date}, west {west_date}: the east must be ahead, by one day or two"
     )

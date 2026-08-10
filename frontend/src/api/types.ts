@@ -88,7 +88,11 @@ export interface Transaction {
   counter_account_id: string | null;
   /** Set when a recurring template generated this row; null once the template is gone. */
   recurring_template_id: string | null;
+  /** What it was, in the currency it happened in. */
   amount_cents: number;
+  currency: string;
+  /** The same money in your own currency, frozen when it was recorded. */
+  base_amount_cents: number;
   description: string;
   merchant: string | null;
   occurred_on: string; // YYYY-MM-DD
@@ -99,6 +103,10 @@ export interface Transaction {
 
 export interface TransactionCreate {
   kind?: TransactionKind;
+  /** Omit for your own currency. With a foreign one, `base_amount_cents` is what a
+   *  statement says actually left the account — better evidence than any rate. */
+  currency?: string;
+  base_amount_cents?: number;
   account_id?: string | null;
   counter_account_id?: string | null;
   amount_cents: number;

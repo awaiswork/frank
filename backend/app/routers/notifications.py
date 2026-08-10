@@ -32,7 +32,7 @@ from app.email import queue_email
 from app.email.templates import weekly_digest_email
 from app.models import NotificationSetting, User
 from app.schemas import MessageOut, NotificationsOut, NotificationsUpdate, UnsubscribeIn
-from app.services import digest
+from app.services import digest, fx
 
 log = logging.getLogger("frankly")
 
@@ -103,6 +103,31 @@ def unsubscribe(body: UnsubscribeIn, db: DbSession) -> MessageOut:
     return said
 
 
+def _require_cron_secret(authorization: str) -> None:
+    """Shared by every scheduled route. Refuses when no secret is configured."""
+    settings = get_settings()
+    if not settings.cron_secret:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Not configured")
+    if not tokens_equal(authorization.removeprefix("Bearer ").strip(), settings.cron_secret):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authorised")
+
+
+@router.post("/internal/fx/refresh", response_model=MessageOut)
+def refresh_rates(db: DbSession, authorization: str = Header(default="")) -> MessageOut:
+    """Pull today's published rates for every currency someone actually reports in.
+
+    Deliberately **not** guarded by `ENV = prod`, unlike the digest. That guard exists
+    because the digest *contacts people*; this writes exchange rates to a table, which is
+    harmless and useful to run locally. Guarding everything named `/internal` by reflex
+    would make the digest's guard read as ceremony rather than as a fix for something
+    that actually went wrong.
+    """
+    _require_cron_secret(authorization)
+    bases = [code for (code,) in db.execute(select(User.currency).distinct()) if code]
+    written = fx.refresh(db, bases)
+    return MessageOut(detail=f"Stored {written} rates.")
+
+
 @router.post("/internal/digest/run", response_model=MessageOut)
 def run_digest(
     db: DbSession,
@@ -124,14 +149,8 @@ def run_digest(
 
     `?dry=true` does the same in production, for checking without sending.
     """
+    _require_cron_secret(authorization)
     settings = get_settings()
-    if not settings.cron_secret:
-        # Fails closed. An unconfigured secret must not mean "no check".
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Not configured")
-
-    presented = authorization.removeprefix("Bearer ").strip()
-    if not tokens_equal(presented, settings.cron_secret):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authorised")
 
     now = dt.datetime.now(dt.UTC)
     # Claiming is what marks a week as spent. A run that will not send must not take it.
