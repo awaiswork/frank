@@ -16,6 +16,7 @@ type IconName =
   | 'transactions'
   | 'wealth'
   | 'lending'
+  | 'recurring'
   | 'budgets'
   | 'goals'
   | 'insight'
@@ -68,6 +69,15 @@ function Icon({ name }: { name: IconName }) {
           <path d="M4 8h13a3 3 0 0 1 0 6h-3" />
           <path d="m8 4-4 4 4 4" />
           <path d="m16 20 4-4-4-4" />
+        </svg>
+      );
+    case 'recurring':
+      return (
+        <svg {...p}>
+          <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" />
+          <path d="M21 3v5h-5" />
+          <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" />
+          <path d="M3 21v-5h5" />
         </svg>
       );
     case 'budgets':
@@ -128,6 +138,7 @@ const RECORDS: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/transactions', 'Transactions', 'transactions'],
   ['/wealth', 'Wealth', 'wealth'],
   ['/lending', 'Lending', 'lending'],
+  ['/recurring', 'Repeating', 'recurring'],
   ['/budgets', 'Budgets', 'budgets'],
   ['/goals', 'Goals', 'goals'],
   ['/insights', 'Insight', 'insight'],
@@ -472,6 +483,7 @@ function MoreSheet({
     ['/advisor', 'Ask Frankly', 'advisor'],
     ['/wealth', 'Wealth', 'wealth'],
     ['/lending', 'Lending', 'lending'],
+    ['/recurring', 'Repeating', 'recurring'],
     ['/goals', 'Goals', 'goals'],
     ['/insights', 'Insight', 'insight'],
     ['/settings', 'Settings', 'settings'],

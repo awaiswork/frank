@@ -17,6 +17,7 @@ from app.routers import (
     insights,
     nl,
     oauth,
+    recurring,
     transactions,
 )
 from app.schemas import FeaturesOut
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(budgets.router)
     app.include_router(goals.router)
     app.include_router(insights.router)
+    app.include_router(recurring.router)
     app.include_router(nl.router)
     app.include_router(advisor.router)
     return app

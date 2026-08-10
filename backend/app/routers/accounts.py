@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession, Today
+from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
 from app.models import Account, Transaction, User
 from app.schemas import (
     AccountCreate,
@@ -77,7 +77,7 @@ def _payload(db: Session, user_id: uuid.UUID, *, include_archived: bool) -> Acco
     )
 
 
-@router.get("", response_model=AccountsOut)
+@router.get("", response_model=AccountsOut, dependencies=[LedgerUpToDate])
 def list_accounts(
     user: CurrentUser,
     db: DbSession,

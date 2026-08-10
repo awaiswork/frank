@@ -14,6 +14,7 @@ const tx = (categoryId: string | null, kind: Kind = 'expense'): Transaction => (
   kind,
   account_id: null,
   counter_account_id: null,
+  recurring_template_id: null,
   amount_cents: 100,
   description: 'x',
   merchant: null,

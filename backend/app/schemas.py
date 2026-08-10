@@ -190,6 +190,45 @@ class AccountsOut(BaseModel):
     ledger_starts_on: dt.date | None
 
 
+Cadence = Literal["weekly", "monthly", "yearly"]
+
+
+class RecurringCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: Kind = "expense"
+    amount_cents: int = Field(gt=0)
+    cadence: Cadence = "monthly"
+    start_on: dt.date | None = None  # None -> the user's today
+    end_on: dt.date | None = None
+    category_id: uuid.UUID | None = None
+    account_id: uuid.UUID | None = None
+
+
+class RecurringUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    amount_cents: int | None = Field(default=None, gt=0)
+    cadence: Cadence | None = None
+    end_on: dt.date | None = None
+    category_id: uuid.UUID | None = None
+    account_id: uuid.UUID | None = None
+    archived: bool | None = None
+
+
+class RecurringOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: str
+    amount_cents: int
+    cadence: str
+    start_on: dt.date
+    end_on: dt.date | None
+    category_id: uuid.UUID | None
+    account_id: uuid.UUID | None
+    archived_at: dt.datetime | None
+    # Computed, not stored: the next date this falls due, or None once it has ended.
+    next_on: dt.date | None
+
+
 class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -230,6 +269,8 @@ class TransactionOut(BaseModel):
     kind: str
     account_id: uuid.UUID | None
     counter_account_id: uuid.UUID | None
+    # Set when a recurring template generated this row; null once the template is gone.
+    recurring_template_id: uuid.UUID | None
     amount_cents: int
     description: str
     merchant: str | None

@@ -69,3 +69,26 @@ def get_today(user: CurrentUser) -> dt.date:
 
 
 Today = Annotated[dt.date, Depends(get_today)]
+
+
+def bring_ledger_up_to_date(user: CurrentUser, db: DbSession, today: Today) -> None:
+    """Write any recurring occurrence whose date has arrived, before anything is read.
+
+    Every money figure — spend, budgets, balances, the daily note — is computed from
+    the transactions table, so a generated row has to exist before any of them are
+    asked. There is no scheduler on this stack, so the read is the trigger.
+
+    Cheap when there is nothing to do: `last_materialised_on` means the usual case is
+    one indexed query returning no templates at all.
+
+    Declared as a dependency rather than called from each handler because four routers
+    is three places to forget. `test_recurring.test_every_money_route_is_up_to_date`
+    asserts the money-reading routes all carry it.
+    """
+    from app.services.recurring import materialise_due
+
+    materialise_due(db, user, today)
+
+
+#: Money-reading routes depend on this so generated rows exist before they are counted.
+LedgerUpToDate = Depends(bring_ledger_up_to_date)

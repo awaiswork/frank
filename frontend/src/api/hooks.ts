@@ -15,6 +15,8 @@ import type {
   InsightsSummary,
   LendPayload,
   NlDraft,
+  Recurring,
+  RecurringCreate,
   Transaction,
   TransactionCreate,
   User,
@@ -165,6 +167,55 @@ export function useParseNl() {
   return useMutation({
     mutationFn: (text: string) =>
       apiFetch<NlDraft[]>('/nl/parse', { method: 'POST', body: json({ text }) }),
+  });
+}
+
+// --- Recurring ---------------------------------------------------------------
+
+export function useRecurring() {
+  return useQuery({
+    queryKey: ['recurring'],
+    queryFn: () => apiFetch<Recurring[]>('/recurring'),
+  });
+}
+
+export function useCreateRecurring() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RecurringCreate) =>
+      apiFetch<Recurring>('/recurring', { method: 'POST', body: json(body) }),
+    // A template starting today generates its first row on the very next money read,
+    // so everything that counts money has to be refetched, not just this list.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['recurring'] });
+      invalidateMoney(client);
+    },
+  });
+}
+
+export function useUpdateRecurring() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: { id: string } & Partial<RecurringCreate> & { archived?: boolean }) =>
+      apiFetch<Recurring>(`/recurring/${id}`, { method: 'PATCH', body: json(body) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['recurring'] });
+      invalidateMoney(client);
+    },
+  });
+}
+
+export function useDeleteRecurring() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/recurring/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['recurring'] });
+      invalidateMoney(client);
+    },
   });
 }
 
