@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models import Account, Transaction, User
-from app.services.accounts import BALANCE_SIGNS, balances
+from app.services.accounts import LEG_SIGNS, balances
 from tests.conftest import create_account as register
 
 OPENED = dt.date(2026, 6, 1)
@@ -88,10 +88,12 @@ def test_balance_signs_cover_every_kind(db: Session) -> None:
     assert source, "ck_transactions_kind is missing"
     allowed = set(re.findall(r"'([a-z_]+)'", str(source)))
 
-    assert allowed == set(BALANCE_SIGNS), (
-        "transactions.kind and BALANCE_SIGNS disagree. A kind with no entry in "
-        "BALANCE_SIGNS contributes nothing to a balance, silently. Decide what "
-        f"{allowed ^ set(BALANCE_SIGNS)} does to an account balance."
+    assert allowed == set(LEG_SIGNS), (
+        "transactions.kind and LEG_SIGNS disagree. A kind with no entry in LEG_SIGNS "
+        "contributes nothing to a balance, silently. Decide what "
+        f"{allowed ^ set(LEG_SIGNS)} does to an account balance — and note the answer "
+        "is a pair: what it does to its own account, and to a counter account if it "
+        "has one. A single sign cannot describe money moving between two places."
     )
 
 

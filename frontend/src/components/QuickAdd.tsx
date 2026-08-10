@@ -6,7 +6,7 @@ import {
   useDeleteTransaction,
   useTransactions,
 } from '../api/hooks';
-import type { Kind } from '../api/types';
+import type { Kind, TransactionKind } from '../api/types';
 import { useAuth } from '../auth/useAuth';
 import { lastAccount, rememberAccount } from '../lib/lastAccount';
 import { categoryColor, categoryTint } from '../lib/categoryColor';
@@ -20,6 +20,8 @@ import { Portal } from './ui';
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'] as const;
 
 const TOP_CATEGORIES = 6;
+
+const KINDS = ['expense', 'income', 'transfer'] as const;
 
 /** True on touch-first devices, where we drive the amount with our own keypad so
  *  the OS keyboard doesn't cover the sheet. */
@@ -39,7 +41,7 @@ function useCoarsePointer(): boolean {
 interface Logged {
   id: string;
   amountCents: number;
-  kind: Kind;
+  kind: TransactionKind;
   categoryName: string | null;
 }
 
@@ -67,11 +69,12 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   const coarse = useCoarsePointer();
 
   const [amount, setAmount] = useState('');
-  const [kind, setKind] = useState<Kind>('expense');
+  const [kind, setKind] = useState<TransactionKind>('expense');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   // Only what the user actually tapped. The account in force is derived below, so
   // there is no effect racing the accounts query to seed it.
   const [pickedAccount, setPickedAccount] = useState<string | null>(null);
+  const [pickedCounter, setPickedCounter] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [occurredOn, setOccurredOn] = useState(todayISO);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -82,9 +85,12 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   const closeTimer = useRef<number | undefined>(undefined);
   const overlayRef = useModal(onClose);
 
+  // A transfer has no categories at all, so ranking falls back to the expense list
+  // rather than being asked to rank against a kind no category can have.
+  const categoryKind: Kind = kind === 'income' ? 'income' : 'expense';
   const ranked = useMemo(
-    () => rankCategories(categories.data ?? [], transactions.data ?? [], kind),
-    [categories.data, transactions.data, kind],
+    () => rankCategories(categories.data ?? [], transactions.data ?? [], categoryKind),
+    [categories.data, transactions.data, categoryKind],
   );
   const visible = showAllCategories ? ranked : ranked.slice(0, TOP_CATEGORIES);
   const cents = parseAmountToCents(amount);
@@ -115,7 +121,7 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   );
 
   // Money leaves an account on an expense and lands in one on income. Saying "from"
-  // both ways would be wrong, and this is the wording transfers will extend.
+  // both ways would be wrong, and it is what lets a transfer read as "from X to Y".
   const preposition = kind === 'income' ? 'to' : 'from';
 
   // Derived rather than seeded in an effect: the accounts arrive after first paint,
@@ -127,6 +133,19 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
     const remembered = user ? lastAccount(user.id) : null;
     return (openAccounts.find((a) => a.id === remembered) ?? openAccounts[0]).id;
   }, [pickedAccount, openAccounts, user]);
+
+  // A transfer needs somewhere to go that isn't where it came from, so it is only
+  // offered once two accounts exist — and the destination can never be the source.
+  const canTransfer = openAccounts.length > 1;
+  const destinations = useMemo(
+    () => openAccounts.filter((a) => a.id !== accountId),
+    [openAccounts, accountId],
+  );
+  const counterAccountId = useMemo(() => {
+    if (kind !== 'transfer') return null;
+    if (pickedCounter && destinations.some((a) => a.id === pickedCounter)) return pickedCounter;
+    return destinations[0]?.id ?? null;
+  }, [kind, pickedCounter, destinations]);
 
   function tapKey(key: string) {
     setError(null);
@@ -153,11 +172,15 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
         // Description is optional here on purpose — chasing people for a label is
         // exactly the friction that stops them logging. Fall back to the category.
         description:
-          description.trim() || category?.name || (kind === 'income' ? 'Income' : 'Expense'),
+          description.trim() ||
+          (kind === 'transfer' ? 'Moved between accounts' : null) ||
+          category?.name ||
+          (kind === 'income' ? 'Income' : 'Expense'),
         kind,
         occurred_on: occurredOn,
-        category_id: categoryId,
+        category_id: kind === 'transfer' ? null : categoryId,
         account_id: accountId,
+        counter_account_id: counterAccountId,
       },
       {
         onSuccess: (tx) => {
@@ -214,7 +237,7 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
               {/* Header: what kind of thing is this, and a way out */}
               <div className="flex items-center justify-between border-b border-line px-4 py-3">
                 <div className="flex rounded-full bg-inset p-1">
-                  {(['expense', 'income'] as const).map((k) => (
+                  {KINDS.filter((k) => k !== 'transfer' || canTransfer).map((k) => (
                     <button
                       key={k}
                       type="button"
@@ -290,7 +313,7 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
                   The preposition follows the direction, which is also the honest word:
                   money leaves an account on an expense and lands in one on income. */}
               {openAccounts.length > 0 && (
-                <div className="flex justify-center px-4 pb-4">
+                <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-2 px-4 pb-4">
                   {openAccounts.length === 1 ? (
                     <span className="text-[13px] text-muted">
                       {preposition} <span className="text-ink-2">{openAccounts[0].name}</span>
@@ -312,48 +335,73 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
                       </select>
                     </label>
                   )}
+
+                  {/* The far half of the sentence. Only a transfer has one, and the
+                      source is never in the list — a transfer to itself is refused by
+                      the database, so it should not be offerable here either. */}
+                  {kind === 'transfer' && (
+                    <label className="flex items-center gap-2 text-[13px] text-muted">
+                      to
+                      <select
+                        value={counterAccountId ?? ''}
+                        onChange={(e) => setPickedCounter(e.target.value)}
+                        aria-label="Destination account"
+                        className="h-9 rounded-input border border-line-2 bg-field px-2.5 text-[13px] text-ink-2 focus:outline-none"
+                      >
+                        {destinations.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
               )}
 
-              {/* Categories — one tap, most-used first */}
-              <div className="flex flex-wrap gap-2 px-4 pb-4">
-                {visible.map((c) => {
-                  const on = categoryId === c.id;
-                  return (
+              {/* Categories — one tap, most-used first. Absent for a transfer: a
+                  category is how spend reaches a budget, and moving your own money
+                  between accounts is not spend. The DB constraint agrees. */}
+              {kind !== 'transfer' && (
+                <div className="flex flex-wrap gap-2 px-4 pb-4">
+                  {visible.map((c) => {
+                    const on = categoryId === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setCategoryId(on ? null : c.id)}
+                        className={`flex items-center gap-2 rounded-full border px-3 py-2 text-[13.5px] font-medium transition-colors ${
+                          on ? 'text-ink' : 'border-line-2 text-ink-2 hover:text-ink'
+                        }`}
+                        style={
+                          on
+                            ? {
+                                borderColor: categoryColor(c.name),
+                                background: categoryTint(c.name),
+                              }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: categoryColor(c.name) }}
+                        />
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                  {!showAllCategories && ranked.length > TOP_CATEGORIES && (
                     <button
-                      key={c.id}
                       type="button"
-                      onClick={() => setCategoryId(on ? null : c.id)}
-                      className={`flex items-center gap-2 rounded-full border px-3 py-2 text-[13.5px] font-medium transition-colors ${
-                        on ? 'text-ink' : 'border-line-2 text-ink-2 hover:text-ink'
-                      }`}
-                      style={
-                        on
-                          ? {
-                              borderColor: categoryColor(c.name),
-                              background: categoryTint(c.name),
-                            }
-                          : undefined
-                      }
+                      onClick={() => setShowAllCategories(true)}
+                      className="rounded-full border border-dashed border-line-2 px-3 py-2 text-[13.5px] font-medium text-muted hover:text-ink"
                     >
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ background: categoryColor(c.name) }}
-                      />
-                      {c.name}
+                      more…
                     </button>
-                  );
-                })}
-                {!showAllCategories && ranked.length > TOP_CATEGORIES && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllCategories(true)}
-                    className="rounded-full border border-dashed border-line-2 px-3 py-2 text-[13.5px] font-medium text-muted hover:text-ink"
-                  >
-                    more…
-                  </button>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Optional detail */}
               <div className="flex flex-col gap-2.5 px-4 pb-4">
@@ -470,7 +518,7 @@ function LoggedFlash({
         {formatMoney(logged.amountCents, { signed: income })}
       </p>
       <p className="text-[14px] text-muted">
-        {income ? 'Income logged' : 'Logged'}
+        {logged.kind === 'transfer' ? 'Moved' : income ? 'Income logged' : 'Logged'}
         {logged.categoryName ? ` · ${logged.categoryName}` : ''}
       </p>
       <div className="mt-5 flex w-full items-center gap-2">

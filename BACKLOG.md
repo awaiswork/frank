@@ -29,7 +29,8 @@ for review → approve → implement → diff → review → tests → stop.
 | 0a | Foundations — period helpers, schema-drift test, two bug fixes | S | **Done** |
 | 0b | Per-user timezone | S | **Done** |
 | 1 | Accounts (no transfers) | M | **Done** |
-| 2 | Transfers + refunds | M | Not started |
+| 2a | Transfers | M | **Done** |
+| 2b | Refunds + reconcile | M | Not started |
 | 3 | IOUs / informal lending | S | Not started |
 | 4a | Recurring — templates + materialisation | M | Not started |
 | 4b | Recurring — forecast into safe-to-spend | S | Not started |
@@ -216,52 +217,73 @@ three accounts; worth revisiting with more.
 
 ---
 
-### Phase 2 — Transfers + refunds · M
+### Phase 2a — Transfers · M · **done**
 
-Money moves between accounts without corrupting a single report.
+Split from refunds on risk profile, and the split earned itself: **transfers touch no
+existing aggregate** — all six filter `kind` positively, so a third value is excluded
+for free — while **refunds touch all six**. Keeping them apart is what let 2a assert
+that every spending figure is byte-identical with transfers present, an assertion
+simply unavailable if refunds rewrote those same queries in the same diff.
 
-- `kind` CHECK widens to `('expense','income','transfer','refund')`; add
-  `counter_account_id` and the shape constraint:
+One row with `counter_account_id`, not a matched pair, guarded by
+`ck_transactions_transfer_shape`: both ends present, different, and no category, so a
+transfer can never reach a budget however the row is written.
 
-  ```sql
-  CHECK (
-    (kind = 'transfer'
-       AND account_id IS NOT NULL
-       AND counter_account_id IS NOT NULL
-       AND counter_account_id <> account_id
-       AND category_id IS NULL)
-    OR
-    (kind <> 'transfer' AND counter_account_id IS NULL)
-  )
-  ```
+**The balance query was rebuilt around legs, and that was the real work.** `LEG_SIGNS`
+maps a kind to what it does to its own account *and* to a counter account, because a
+transfer's effect depends on which account is being asked about. The flat `{kind: sign}`
+map from Phase 1 could not express that, and its natural-looking fix — `"transfer": -1`
+— takes money out of the source and puts it nowhere. That variant fails 7 tests,
+including every conservation case; verified rather than assumed. Note the *guard* test
+still passes there. It forces a decision; conservation checks the decision was right.
 
-- **Refunds** are a genuine aggregate change, unlike transfers: a refund should reduce
-  spend in its category rather than count as income. Two candidates — a signed `CASE` in
-  the expense sums, or negative-signed companion rows. Settle at schema review; the
-  existing `amount_cents > 0` CHECK forces it to be a decision rather than an accident.
-- Fix `frontend/src/pages/Transactions.tsx` `net` — an `if income / else negative`
-  binary, the only sign-based aggregation in the codebase, which would otherwise count
-  transfers as spend.
-- Resolve goal contributions vs transfers (see §6): a contribution to a goal with a
-  linked savings account becomes a transfer, and `safe_to_spend` stops double-subtracting.
-- Transfer UI in `QuickAdd` (from / to, no category field).
+A transfer emits −x and +x, so conservation is a property of the query's shape rather
+than something anyone has to remember.
 
-**Tests that prove it — conservation first:**
+*Schema:* migration `0008` — `counter_account_id` (`ON DELETE RESTRICT`), widened kind
+CHECK, and the shape CHECK. Additive; existing rows satisfy it with no backfill.
+Round-trips down and up with the drift test clean.
 
-1. **Conservation.** `Σ(all account balances)` is identical before and after inserting a
-   transfer of any amount between any two accounts. Property-style over generated
-   amounts and pairs. One assertion that catches every double-counting bug, present and
-   future.
-2. **Aggregate invariance.** `safe_to_spend`, `spend_by_category`, `budget_vs_actual`,
-   `daily_burn_rate` and `month_over_month_by_category` return identical results before
-   and after transfers exist. The regression net for the positive-filter discipline.
-3. **Shape.** Direct inserts of each malformed variant raise `IntegrityError`: transfer
-   with a category, transfer to itself, transfer with a null counter, non-transfer with
-   a counter set.
-4. **Client net** excludes transfers.
+**A bug caught in design rather than in production:** `has_entries` looked only at
+`account_id`, so an account that had only ever *received* transfers looked empty and
+was offered for a deletion the RESTRICT foreign key would then refuse — a 500 where
+the user deserved a sentence.
 
-*Risk:* **highest in the roadmap** — this is where reports corrupt silently. The
-conservation test is the mitigation, and it lands before any transfer UI is merged.
+On the client, `lib/net.ts` replaces the `income ? +x : -x` reducer that would have
+counted every transfer as spending. `Record<TransactionKind, number>` makes the
+compiler refuse an unhandled kind, which is the type-level twin of the server guard —
+and `net.test.ts` is its behavioural twin, since the type catches an *omitted* kind but
+not a *wrong* sign.
+
+Checked in a browser at 320px: "from Everyday to Savings" reads on one line, categories
+disappear for a transfer, the destination list excludes the source, and a day of
+nothing but moves nets `+0,00 €`.
+
+**Deliberately not here:** goal contributions still write no transaction, so
+`safe_to_spend` can still double-subtract if the bank move is also logged. Transfers do
+not make it worse — they are excluded from safe-to-spend — and linking goals to accounts
+is its own change, not one to bundle with a balance-query rewrite.
+
+---
+
+### Phase 2b — Refunds + reconcile · M
+
+Both change what the *spending* aggregates say, which is why they sit here rather than
+with transfers, and both still have an open design question.
+
+- **Refunds** reduce spend in their category rather than counting as income. Two
+  candidates: a signed `CASE` in the expense sums, or negative-signed companion rows.
+- **Reconcile** — "the real balance is X" writes an adjustment. It needs a `kind`, not a
+  `source`: `source` is provenance and no aggregate reads it. The open question is
+  direction. `amount_cents > 0` is a documented invariant, but a correction is
+  bidirectional and has no counter account to carry the sign, so either the CHECK relaxes
+  for this one kind or the sign lives somewhere else. Worth deciding deliberately.
+
+Whatever is chosen, `LEG_SIGNS` and the `ck_transactions_kind` guard force both kinds to
+declare what they do to a balance, and the conservation and invariance tests from 2a are
+already in place to catch a mistake.
+
+*Risk:* the aggregate rewrites. Unlike 2a, these queries genuinely change.
 
 ---
 

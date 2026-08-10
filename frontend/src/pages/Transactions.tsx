@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useCategories, useDeleteTransaction, useTransactions } from '../api/hooks';
+import { useAccounts, useCategories, useDeleteTransaction, useTransactions } from '../api/hooks';
 import type { Category, Transaction } from '../api/types';
 import { useCapture } from '../capture/useCapture';
 import { CategoryAvatar } from '../components/CategoryAvatar';
@@ -7,6 +7,7 @@ import { AiBadge } from '../components/bits';
 import { Money } from '../components/Money';
 import { Card } from '../components/ui';
 import { currentMonth, monthLabel, shiftMonth } from '../lib/date';
+import { dayNet } from '../lib/net';
 import { formatMoney } from '../lib/money';
 
 function dayHeading(iso: string): string {
@@ -28,6 +29,11 @@ export function Transactions() {
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const categories = useCategories();
+  const accounts = useAccounts(true); // archived included: their history still shows
+  const accountNames = useMemo(
+    () => new Map((accounts.data?.accounts ?? []).map((a) => [a.id, a.name])),
+    [accounts.data],
+  );
   const transactions = useTransactions({
     month,
     q: q.trim() || undefined,
@@ -130,10 +136,7 @@ export function Transactions() {
       ) : (
         <div className="flex flex-col gap-[22px]">
           {groups.map(([day, items]) => {
-            const net = items.reduce(
-              (a, t) => a + (t.kind === 'income' ? t.amount_cents : -t.amount_cents),
-              0,
-            );
+            const net = dayNet(items);
             return (
               <div key={day}>
                 <div className="mb-2 flex items-center justify-between px-0.5">
@@ -150,6 +153,7 @@ export function Transactions() {
                       key={t.id}
                       tx={t}
                       category={t.category_id ? (catById.get(t.category_id) ?? null) : null}
+                      accountNames={accountNames}
                     />
                   ))}
                 </Card>
@@ -177,10 +181,30 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   );
 }
 
-function Row({ tx, category }: { tx: Transaction; category: Category | null }) {
+function Row({
+  tx,
+  category,
+  accountNames,
+}: {
+  tx: Transaction;
+  category: Category | null;
+  accountNames: Map<string, string>;
+}) {
   const del = useDeleteTransaction();
   const income = tx.kind === 'income';
+  const transfer = tx.kind === 'transfer';
   const label = tx.merchant ?? tx.description;
+
+  // For a transfer the two accounts *are* the information — "moved between accounts"
+  // only restates the row. Falls back to the generic line if an account has since been
+  // deleted out from under it.
+  const from = accountNames.get(tx.account_id ?? '');
+  const to = accountNames.get(tx.counter_account_id ?? '');
+  const subtitle = transfer
+    ? from && to
+      ? `${from} → ${to}`
+      : 'Moved between accounts'
+    : (category?.name ?? 'Uncategorised');
   return (
     <div className="group flex items-center gap-[13px] border-b border-line px-4 py-[13px] last:border-0">
       <CategoryAvatar
@@ -198,7 +222,12 @@ function Row({ tx, category }: { tx: Transaction; category: Category | null }) {
           </span>
           {tx.source === 'nl_parse' && <AiBadge />}
         </div>
-        <div className="truncate text-[12.5px] text-muted">{category?.name ?? 'Uncategorised'}</div>
+        {/* Two account names and an arrow outrun a 320px row, and this line has the
+            least space in it. Same answer as the merchant name above: truncate, but
+            keep the whole thing reachable. */}
+        <div className="truncate text-[12.5px] text-muted" title={transfer ? subtitle : undefined}>
+          {subtitle}
+        </div>
       </div>
       <button
         type="button"
@@ -210,9 +239,10 @@ function Row({ tx, category }: { tx: Transaction; category: Category | null }) {
         ×
       </button>
       <Money
-        cents={income ? tx.amount_cents : -tx.amount_cents}
+        cents={transfer ? tx.amount_cents : income ? tx.amount_cents : -tx.amount_cents}
         signed={income}
-        tone={income ? 'go' : 'default'}
+        // Neither a gain nor a loss, so it gets neither colour and no sign.
+        tone={transfer ? 'muted' : income ? 'go' : 'default'}
         className="!text-[15.5px] font-semibold"
       />
     </div>
