@@ -133,8 +133,8 @@ def test_nothing_is_sent_outside_production(
     _user(db)
     monkeypatch.setattr(get_settings(), "cron_secret", "s3cret")
     monkeypatch.setattr(get_settings(), "env", "dev")
-    monkeypatch.setattr(digest, "SEND_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
-    monkeypatch.setattr(digest, "SEND_HOUR", 0)
+    monkeypatch.setattr(digest, "DEFAULT_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
+    monkeypatch.setattr(digest, "DEFAULT_HOUR", 0)
 
     before = len(SENT)
     res = client.post("/internal/digest/run", headers={"Authorization": "Bearer s3cret"})
@@ -150,8 +150,8 @@ def test_a_run_that_sends_nothing_takes_nobodys_week(
     user = _user(db)
     monkeypatch.setattr(get_settings(), "cron_secret", "s3cret")
     monkeypatch.setattr(get_settings(), "env", "dev")
-    monkeypatch.setattr(digest, "SEND_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
-    monkeypatch.setattr(digest, "SEND_HOUR", 0)
+    monkeypatch.setattr(digest, "DEFAULT_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
+    monkeypatch.setattr(digest, "DEFAULT_HOUR", 0)
 
     client.post("/internal/digest/run", headers={"Authorization": "Bearer s3cret"})
     setting = db.scalar(select(NotificationSetting).where(NotificationSetting.user_id == user.id))
@@ -164,8 +164,8 @@ def test_a_dry_run_in_production_sends_nothing_either(
     _user(db)
     monkeypatch.setattr(get_settings(), "cron_secret", "s3cret")
     monkeypatch.setattr(get_settings(), "env", "prod")
-    monkeypatch.setattr(digest, "SEND_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
-    monkeypatch.setattr(digest, "SEND_HOUR", 0)
+    monkeypatch.setattr(digest, "DEFAULT_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
+    monkeypatch.setattr(digest, "DEFAULT_HOUR", 0)
 
     before = len(SENT)
     res = client.post("/internal/digest/run?dry=true", headers={"Authorization": "Bearer s3cret"})
@@ -205,6 +205,96 @@ def test_turning_it_off_stops_it(db: Session) -> None:
     db.add(NotificationSetting(user_id=user.id, kind=KIND, enabled=False))
     db.flush()
     assert digest.due_now(db, MONDAY) == []
+
+
+# --- the schedule is the reader's ---------------------------------------------
+
+
+def _scheduled(db: Session, weekday: int, hour: int, **kw: object) -> User:
+    user = _user(db, **kw)  # type: ignore[arg-type]
+    db.add(
+        NotificationSetting(
+            user_id=user.id, kind=KIND, enabled=True, send_weekday=weekday, send_hour=hour
+        )
+    )
+    db.flush()
+    return user
+
+
+def test_a_chosen_day_and_hour_is_the_one_that_fires(db: Session) -> None:
+    """Thursday at 19:00 means Thursday at 19:00, not Monday at 08:00."""
+    _scheduled(db, weekday=3, hour=19)  # Thursday
+
+    assert digest.due_now(db, MONDAY) == []  # the old fixed slot
+    thursday_six = dt.datetime(2026, 8, 6, 18, 0, tzinfo=dt.UTC)
+    assert digest.due_now(db, thursday_six) == []  # an hour early is not yet
+    assert len(digest.due_now(db, dt.datetime(2026, 8, 6, 19, 0, tzinfo=dt.UTC))) == 1
+
+
+def test_a_late_hour_is_no_more_fragile_than_an_early_one(db: Session) -> None:
+    """The reason this stopped being `hour >= SEND_HOUR`.
+
+    That test kept a digest eligible until midnight, so 08:00 quietly carried sixteen
+    hours of slack and 23:00 carried one. GitHub's cron skews and sometimes skips an
+    hour outright — we watched it — so the late-hour reader was the one who silently
+    lost a week. Both windows are now the same width.
+    """
+    early = _scheduled(db, weekday=0, hour=8)
+    late = _scheduled(db, weekday=0, hour=23)
+
+    # Each one's own run is missed entirely; the next run to come along still sends.
+    monday_late_morning = dt.datetime(2026, 8, 3, 11, 0, tzinfo=dt.UTC)
+    assert [u.id for u in digest.due_now(db, monday_late_morning)] == [early.id]
+
+    tuesday_small_hours = dt.datetime(2026, 8, 4, 2, 0, tzinfo=dt.UTC)
+    assert [u.id for u in digest.due_now(db, tuesday_small_hours)] == [late.id]
+
+
+def test_a_missed_week_is_not_delivered_days_late(db: Session) -> None:
+    """Catching up is bounded. A day late is a late digest; Friday's news on Sunday is
+    just wrong, and it would also land on top of the next one."""
+    _scheduled(db, weekday=0, hour=8)
+    # Anchored on the appointment, not on MONDAY — MONDAY is an hour past it, and
+    # measuring the window from the wrong end is how the first version of this test
+    # landed exactly on the boundary and read as a bug in the code.
+    appointment = dt.datetime(2026, 8, 3, 8, 0, tzinfo=dt.UTC)
+    assert digest.due_now(db, appointment + dt.timedelta(hours=23)) != []
+    assert digest.due_now(db, appointment + dt.timedelta(hours=25)) == []
+
+
+def test_moving_the_day_takes_effect_that_week(db: Session) -> None:
+    """The point of comparing against the appointment instead of a rolling cooldown.
+
+    Someone who reads Monday's digest and then moves to Thursday gets Thursday's, in
+    the same week. Under a six-day cooldown measured from the last send they would have
+    been refused — a schedule that only takes effect a week after you set it reads as a
+    bug, however defensible the arithmetic.
+    """
+    user = _scheduled(db, weekday=0, hour=8)
+    assert len(digest.due_now(db, MONDAY)) == 1
+
+    setting = db.scalar(select(NotificationSetting).where(NotificationSetting.user_id == user.id))
+    assert setting is not None
+    setting.send_weekday = 3
+    db.flush()
+
+    thursday = dt.datetime(2026, 8, 6, 9, 0, tzinfo=dt.UTC)
+    assert len(digest.due_now(db, thursday)) == 1
+    # And still exactly once.
+    assert digest.due_now(db, thursday + dt.timedelta(hours=1)) == []
+
+
+def test_the_hour_survives_a_daylight_saving_change(db: Session) -> None:
+    """08:00 is 08:00 on both sides of the clocks going back.
+
+    Arithmetic done on the instant rather than on wall time drifts by an hour twice a
+    year, which is the kind of wrong nobody reports and everybody notices.
+    """
+    _scheduled(db, weekday=0, hour=8, timezone="Europe/Helsinki")
+    # Europe/Helsinki leaves DST on 25 Oct 2026; this is the Monday after.
+    after = dt.datetime(2026, 10, 26, 6, 0, tzinfo=dt.UTC)  # 08:00 EET
+    assert digest.due_now(db, after - dt.timedelta(hours=1)) == []
+    assert len(digest.due_now(db, after)) == 1
 
 
 def test_unverified_addresses_are_never_emailed(db: Session) -> None:
@@ -321,14 +411,52 @@ def test_an_unsubscribe_token_is_not_a_way_in(client: TestClient, db: Session) -
     )
 
 
+DEFAULTS = {"weekly_digest": True, "send_weekday": 0, "send_hour": 8}
+
+
 def test_preferences_round_trip_for_a_signed_in_user(client: TestClient) -> None:
     token = register(client, "prefs@example.com")
-    assert client.get("/notifications", headers=_h(token)).json() == {"weekly_digest": True}
+    # Someone who has never touched this reads back the schedule they are actually on,
+    # not nulls — the row does not exist yet, and "unset" is not what the digest does.
+    assert client.get("/notifications", headers=_h(token)).json() == DEFAULTS
 
     off = client.patch("/notifications", headers=_h(token), json={"weekly_digest": False})
-    assert off.json() == {"weekly_digest": False}
+    assert off.json() == {**DEFAULTS, "weekly_digest": False}
     on = client.patch("/notifications", headers=_h(token), json={"weekly_digest": True})
-    assert on.json() == {"weekly_digest": True}
+    assert on.json() == DEFAULTS
+
+
+def test_changing_one_preference_leaves_the_others_alone(client: TestClient) -> None:
+    """Setting the hour must not silently move the day, or the switch, back to default.
+
+    The row is created on first write, so a partial PATCH is the moment a field nobody
+    mentioned could get overwritten with whatever the model happened to default to.
+    """
+    token = register(client, "partial@example.com")
+    client.patch("/notifications", headers=_h(token), json={"send_weekday": 4})
+    client.patch("/notifications", headers=_h(token), json={"weekly_digest": False})
+
+    after = client.patch("/notifications", headers=_h(token), json={"send_hour": 19}).json()
+    assert after == {"weekly_digest": False, "send_weekday": 4, "send_hour": 19}
+    assert client.get("/notifications", headers=_h(token)).json() == after
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"send_weekday": 7},
+        {"send_weekday": -1},
+        {"send_hour": 24},
+        {"send_hour": -1},
+    ],
+)
+def test_an_impossible_schedule_is_refused_at_the_edge(
+    client: TestClient, body: dict[str, int]
+) -> None:
+    """422 from the schema rather than a 500 from the CHECK that also forbids it."""
+    token = register(client, f"bad{abs(hash(str(body)))}@example.com")
+    assert client.patch("/notifications", headers=_h(token), json=body).status_code == 422
+    assert client.get("/notifications", headers=_h(token)).json() == DEFAULTS
 
 
 def test_a_run_emails_the_people_it_claimed(
@@ -343,8 +471,8 @@ def test_a_run_emails_the_people_it_claimed(
     monkeypatch.setattr(get_settings(), "cron_secret", "s3cret")
     # Explicit: this is the one test exercising real delivery, so it has to say so.
     monkeypatch.setattr(get_settings(), "env", "prod")
-    monkeypatch.setattr(digest, "SEND_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
-    monkeypatch.setattr(digest, "SEND_HOUR", 0)
+    monkeypatch.setattr(digest, "DEFAULT_WEEKDAY", dt.datetime.now(dt.UTC).weekday())
+    monkeypatch.setattr(digest, "DEFAULT_HOUR", 0)
 
     before = len(SENT)
     res = client.post("/internal/digest/run", headers={"Authorization": "Bearer s3cret"})

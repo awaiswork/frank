@@ -290,10 +290,23 @@ class NotificationSetting(UUIDPk, Timestamped, Base):
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    # When this kind goes out, in the reader's own timezone. Defaults reproduce what
+    # everyone got before the columns existed, so an existing row means no change.
+    send_weekday: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("0"), default=0
+    )
+    send_hour: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default=text("8"), default=8
+    )
     last_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("kind IN ('weekly_digest')", name="ck_notification_kind"),
+        # Monday is 0, matching `date.weekday()` — the constraint is what stops a
+        # different convention (Sunday-first, 1-indexed) getting in from an API that
+        # looks equally reasonable at the edge.
+        CheckConstraint("send_weekday BETWEEN 0 AND 6", name="ck_notification_weekday"),
+        CheckConstraint("send_hour BETWEEN 0 AND 23", name="ck_notification_hour"),
         UniqueConstraint("user_id", "kind", name="uq_notification_user_kind"),
     )
 
