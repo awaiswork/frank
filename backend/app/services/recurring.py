@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import RecurringSkip, RecurringTemplate, Transaction, User
+from app.services.money import SAME_CURRENCY_RATE
 
 # A runaway guard, not a product limit. A template backdated years generates its whole
 # history on first read; this caps one pass so a single request cannot spiral, and the
@@ -154,6 +155,11 @@ def materialise_due(db: Session, user: User, today: dt.date) -> int:
                     category_id=template.category_id,
                     kind=template.kind,
                     amount_cents=template.amount_cents,
+                    # Templates are in the reporting currency until foreign recurring
+                    # exists, so the conversion is exactly one rather than assumed.
+                    currency=user.currency.upper(),
+                    base_amount_cents=template.amount_cents,
+                    fx_rate=SAME_CURRENCY_RATE,
                     description=template.name,
                     occurred_on=occurs_on,
                     source="recurring",

@@ -20,9 +20,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Budget, Category, Transaction, User
+from app.models import Budget, Category, User
 from app.services.aggregates import budget_vs_actual, safe_to_spend
 from tests.conftest import create_account as register
+from tests.conftest import transaction
 
 JULY = dt.date(2026, 7, 1)
 AUGUST = dt.date(2026, 8, 1)
@@ -88,7 +89,7 @@ def test_limits_carry_but_spending_does_not(db: Session) -> None:
     _budget(db, user, groceries, JULY, 400_00)
     for on, cents in ((dt.date(2026, 7, 20), 300_00), (dt.date(2026, 8, 3), 50_00)):
         db.add(
-            Transaction(
+            transaction(
                 user_id=user.id,
                 category_id=groceries.id,
                 kind="expense",

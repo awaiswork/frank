@@ -11,7 +11,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models import Budget, Category, GoalContribution, SavingsGoal, Transaction, User
+from app.models import Budget, Category, GoalContribution, SavingsGoal, User
 from app.services.aggregates import (
     budget_vs_actual,
     daily_burn_rate,
@@ -21,6 +21,7 @@ from app.services.aggregates import (
     safe_to_spend,
     spend_by_category,
 )
+from tests.conftest import transaction
 
 JUNE = dt.date(2026, 6, 1)
 TODAY = dt.date(2026, 6, 15)  # halfway through a 30-day month -> elapsed 0.5
@@ -49,7 +50,7 @@ def _tx(
     kind: str = "expense",
 ) -> None:
     db.add(
-        Transaction(
+        transaction(
             user_id=user.id,
             category_id=cat.id if cat else None,
             kind=kind,

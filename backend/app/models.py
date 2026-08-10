@@ -440,7 +440,16 @@ class Transaction(UUIDPk, Timestamped, Base):
         ForeignKey("recurring_templates.id", ondelete="SET NULL"), nullable=True
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
+    # What the transaction was, in the currency it happened in.
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    # The same money in the user's reporting currency, **frozen when it was recorded**.
+    # Every report reads this and never a rate: converting at read time would move last
+    # March's spending because the euro moved this morning.
+    base_amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # What was actually used to get there — published, stale, or typed off a statement.
+    # Kept for the audit trail; never used to recompute the amount beside it.
+    fx_rate: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     merchant: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurred_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
@@ -466,6 +475,8 @@ class Transaction(UUIDPk, Timestamped, Base):
             name="ck_transactions_transfer_shape",
         ),
         CheckConstraint("amount_cents > 0", name="ck_transactions_amount_positive"),
+        CheckConstraint("fx_rate > 0", name="ck_transactions_fx_rate_positive"),
+        CheckConstraint("base_amount_cents > 0", name="ck_transactions_base_amount_positive"),
         CheckConstraint(
             "source IN ('manual','nl_parse','reconcile','recurring')",
             name="ck_transactions_source",

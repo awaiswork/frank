@@ -67,7 +67,9 @@ def _legs(user_id: uuid.UUID) -> Subquery:
         Transaction.account_id.label("account_id"),
         case(
             *(
-                (Transaction.kind == kind, Transaction.amount_cents * signs[0])
+                # base_amount_cents: while accounts are all in the reporting
+                # currency, this is what actually left or arrived in the account.
+                (Transaction.kind == kind, Transaction.base_amount_cents * signs[0])
                 for kind, signs in LEG_SIGNS.items()
             ),
             else_=None,
@@ -83,7 +85,7 @@ def _legs(user_id: uuid.UUID) -> Subquery:
         Transaction.counter_account_id.label("account_id"),
         case(
             *(
-                (Transaction.kind == kind, Transaction.amount_cents * sign)
+                (Transaction.kind == kind, Transaction.base_amount_cents * sign)
                 for kind, sign in counter_kinds.items()
             ),
             else_=None,

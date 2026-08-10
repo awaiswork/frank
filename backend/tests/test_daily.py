@@ -16,9 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import today_in
-from app.models import DailyNote, Transaction, User
+from app.models import DailyNote, User
 from app.services import daily
-from tests.conftest import create_account
+from tests.conftest import create_account, transaction
 
 PASSWORD = "supersecret"
 
@@ -190,7 +190,7 @@ def test_note_is_rewritten_when_the_day_turns(client: TestClient, db: Session) -
 
     # Spend past the whole month's income, the way a user would mid-morning.
     db.add(
-        Transaction(
+        transaction(
             user_id=user.id,
             kind="expense",
             amount_cents=150_000,
@@ -231,7 +231,7 @@ def test_note_is_not_rewritten_while_the_mood_holds(
     client.get("/advisor/daily", headers=_h(token))
     # a small spend that doesn't change the mood must not buy a second note
     db.add(
-        Transaction(
+        transaction(
             user_id=user.id,
             kind="expense",
             amount_cents=500,

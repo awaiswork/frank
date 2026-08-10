@@ -25,6 +25,7 @@ from app.schemas import (
     ReconcileIn,
 )
 from app.services.accounts import balances, earliest_opened_on, has_entries
+from app.services.money import SAME_CURRENCY_RATE
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -193,9 +194,12 @@ def lend(body: LendIn, user: CurrentUser, db: DbSession, today: Today) -> Accoun
         Transaction(
             user_id=user.id,
             kind="transfer",
+            currency=user.currency.upper(),
             account_id=from_account.id,
             counter_account_id=to_account.id,
             amount_cents=body.amount_cents,
+            base_amount_cents=body.amount_cents,
+            fx_rate=SAME_CURRENCY_RATE,
             description=body.description
             or (f"Borrowed from {person.name}" if body.borrowing else f"Lent to {person.name}"),
             occurred_on=body.occurred_on or today,
@@ -247,7 +251,10 @@ def reconcile_account(
             user_id=user.id,
             account_id=account_id,
             kind="adjustment_up" if delta > 0 else "adjustment_down",
+            currency=user.currency.upper(),
             amount_cents=abs(delta),
+            base_amount_cents=abs(delta),
+            fx_rate=SAME_CURRENCY_RATE,
             description="Balance correction",
             occurred_on=body.occurred_on or today,
             source="reconcile",

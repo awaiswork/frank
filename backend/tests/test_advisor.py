@@ -16,9 +16,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Budget, Category, SavingsGoal, Transaction, User
+from app.models import Budget, Category, SavingsGoal, User
 from app.services import advisor
-from tests.conftest import create_account
+from tests.conftest import create_account, transaction
 
 PASSWORD = "supersecret"
 TODAY = dt.date(2026, 6, 12)
@@ -44,7 +44,7 @@ def test_build_context_shape_and_token_budget(client: TestClient, db: Session) -
     assert groceries is not None
     db.add_all(
         [
-            Transaction(
+            transaction(
                 user_id=user.id,
                 category_id=groceries.id,
                 kind="expense",
