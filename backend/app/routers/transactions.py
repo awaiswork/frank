@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -10,20 +9,14 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession
-from app.models import Category, Transaction
+from app.deps import CurrentUser, DbSession, Today
+from app.models import Account, Category, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
+from app.services.aggregates import month_bounds, parse_month
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 PAGE_SIZE = 50
-
-
-def _month_range(month: str) -> tuple[dt.date, dt.date]:
-    year, mon = (int(part) for part in month.split("-"))
-    start = dt.date(year, mon, 1)
-    end = dt.date(year + 1, 1, 1) if mon == 12 else dt.date(year, mon + 1, 1)
-    return start, end
 
 
 def _owned_transaction(db: Session, user_id: uuid.UUID, tx_id: uuid.UUID) -> Transaction:
@@ -42,10 +35,26 @@ def _require_owned_category(db: Session, user_id: uuid.UUID, category_id: uuid.U
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown category")
 
 
+def _require_owned_account(db: Session, user_id: uuid.UUID, account_id: uuid.UUID | None) -> None:
+    """NULL is allowed and means unassigned — see migration 0007.
+
+    An archived account is refused: it is still owed its history, but nothing new
+    should land in a balance the user has put away.
+    """
+    if account_id is None:
+        return
+    account = db.get(Account, account_id)
+    if account is None or account.user_id != user_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown account")
+    if account.archived_at is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That account is archived")
+
+
 @router.get("", response_model=list[TransactionOut])
 def list_transactions(
     user: CurrentUser,
     db: DbSession,
+    today: Today,
     month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
     category_id: uuid.UUID | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
@@ -53,7 +62,7 @@ def list_transactions(
 ) -> list[Transaction]:
     stmt = select(Transaction).where(Transaction.user_id == user.id)
     if month is not None:
-        start, end = _month_range(month)
+        start, end = month_bounds(parse_month(month, today=today))
         stmt = stmt.where(Transaction.occurred_on >= start, Transaction.occurred_on < end)
     if category_id is not None:
         stmt = stmt.where(Transaction.category_id == category_id)
@@ -71,9 +80,11 @@ def list_transactions(
 @router.post("", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(body: TransactionCreate, user: CurrentUser, db: DbSession) -> Transaction:
     _require_owned_category(db, user.id, body.category_id)
+    _require_owned_account(db, user.id, body.account_id)
     tx = Transaction(
         user_id=user.id,
         category_id=body.category_id,
+        account_id=body.account_id,
         kind=body.kind,
         amount_cents=body.amount_cents,
         description=body.description,
@@ -94,6 +105,8 @@ def update_transaction(
     data = body.model_dump(exclude_unset=True)
     if "category_id" in data:
         _require_owned_category(db, user.id, data["category_id"])
+    if "account_id" in data:
+        _require_owned_account(db, user.id, data["account_id"])
     for field, value in data.items():
         setattr(tx, field, value)
     db.commit()

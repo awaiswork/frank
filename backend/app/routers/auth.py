@@ -407,6 +407,10 @@ def update_me(body: UserUpdate, user: CurrentUser, db: DbSession) -> User:
     data = body.model_dump(exclude_unset=True)
     if data.get("currency") is not None:
         user.currency = str(data["currency"]).upper()
+    # `in data` rather than a None check: unset leaves the stored value alone, but an
+    # explicit null is how the user says "stop assuming a timezone for me".
+    if "timezone" in data:
+        user.timezone = data["timezone"]
     if "monthly_income_cents" in data:
         user.monthly_income_cents = data["monthly_income_cents"]
     db.commit()

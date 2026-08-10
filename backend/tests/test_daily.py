@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.deps import today_in
 from app.models import DailyNote, Transaction, User
 from app.services import daily
 from tests.conftest import create_account
@@ -71,6 +72,24 @@ def test_compute_mood() -> None:
     assert daily.compute_mood(calm, today) == "go"
 
 
+def test_mood_days_left_excludes_today() -> None:
+    """Today is already inside the burn rate, so it must not be projected again.
+
+    June 15 of a 30-day month leaves 15 days to come, not 16, and at this burn the two
+    answers disagree: 15 days projects 97,50 € against 100 € safe-to-spend ('go'), while
+    16 projects 104 € ('wait'). Pinned because the natural rewrite of the arithmetic —
+    (period end − today) — counts today a second time and quietly sours the mood.
+    """
+    today = dt.date(2026, 6, 15)
+    context: dict[str, Any] = {
+        "income_known": True,
+        "safe_to_spend_eur": 100.0,
+        "daily_burn_eur": 6.5,
+        "budgets": [],
+    }
+    assert daily.compute_mood(context, today) == "go"
+
+
 def test_mood_is_unknown_without_income() -> None:
     """No income on file -> refuse to judge, however the numbers happen to land.
 
@@ -114,7 +133,7 @@ def test_daily_generates_once_then_caches_with_streak(
     assert body["headline"] == "On track"
     assert body["note"] == "Looking good today."
     assert body["streak"] == 1
-    assert body["date"] == dt.date.today().isoformat()
+    assert body["date"] == today_in(None).isoformat()
 
     # a second load the same day is served from the stored row — the model isn't called again
     second = client.get("/advisor/daily", headers=_h(token))
@@ -176,7 +195,7 @@ def test_note_is_rewritten_when_the_day_turns(client: TestClient, db: Session) -
             kind="expense",
             amount_cents=150_000,
             description="rent",
-            occurred_on=dt.date.today(),
+            occurred_on=today_in(None),
         )
     )
     db.flush()
@@ -217,7 +236,7 @@ def test_note_is_not_rewritten_while_the_mood_holds(
             kind="expense",
             amount_cents=500,
             description="coffee",
-            occurred_on=dt.date.today(),
+            occurred_on=today_in(None),
         )
     )
     db.flush()

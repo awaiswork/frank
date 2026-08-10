@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -12,7 +11,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from app.deps import CurrentUser, DbSession
+from app.deps import CurrentUser, DbSession, Today
 from app.features import AdvisorGate, ai_enabled
 from app.models import AdviceRequest, DailyNote
 from app.schemas import AdviceHistoryOut, AdvisorAskIn, AdvisorFollowedIn, DailyNoteOut
@@ -27,9 +26,9 @@ def _sse(event: str, data: dict[str, object]) -> str:
 
 @router.post("/ask")
 async def ask(
-    body: AdvisorAskIn, user: CurrentUser, db: DbSession, _gate: AdvisorGate
+    body: AdvisorAskIn, user: CurrentUser, db: DbSession, today: Today, _gate: AdvisorGate
 ) -> StreamingResponse:
-    context = advisor.build_context(db, user, dt.date.today())
+    context = advisor.build_context(db, user, today)
 
     async def gen() -> AsyncIterator[str]:
         verdict: advisor.Verdict | None = None
@@ -80,7 +79,7 @@ async def ask(
 
 
 @router.get("/daily", response_model=DailyNoteOut)
-async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
+async def get_daily(user: CurrentUser, db: DbSession, today: Today) -> DailyNoteOut:
     """Frankly's check-in for today — one note a day, rewritten if the day turns.
 
     The mood is recomputed live on every read, so the note can never contradict the
@@ -89,7 +88,6 @@ async def get_daily(user: CurrentUser, db: DbSession) -> DailyNoteOut:
     cached, which is what keeps this to at most a handful of model calls a day (and
     exactly zero while the AI features are off, since the fallback is hand-written).
     """
-    today = dt.date.today()
     row = db.scalar(
         select(DailyNote).where(DailyNote.user_id == user.id, DailyNote.note_date == today)
     )

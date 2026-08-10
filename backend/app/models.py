@@ -46,6 +46,11 @@ class User(UUIDPk, Timestamped, Base):
     # exists to anyone who asked.
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency: Mapped[str] = mapped_column(CHAR(3), nullable=False, server_default="EUR")
+    # IANA name, e.g. "Europe/Helsinki". NULL means they have never told us, which is
+    # deliberately not the same as being in UTC — reads fall back to UTC either way, but
+    # only NULL says we are entitled to ask. Validated on write in `UserUpdate`; a value
+    # the tz database no longer recognises degrades to UTC rather than raising.
+    timezone: Mapped[str | None] = mapped_column(Text, nullable=True)
     monthly_income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # NULL means unverified, and unverified means no session is ever issued — the
     # gate is that a token doesn't exist yet, not a check on each request. A
@@ -224,6 +229,47 @@ class Category(UUIDPk, Timestamped, Base):
     )
 
 
+class Account(UUIDPk, Timestamped, Base):
+    """Somewhere money sits, with a ledger that moves it.
+
+    Only things you can transact against live here — `type` is deliberately narrow.
+    A car or an apartment has no entries to sum, only a value someone states; that is
+    an asset with valuations, which is a different shape and a different table.
+
+    The balance is **always derived** (`services/accounts.balances`), never stored:
+    ``opening_balance_cents`` plus every signed entry from ``opened_on`` onward. A
+    stored balance rots the first time anything is edited, deleted or backdated, and it
+    rots silently, which is the worst way for a money figure to be wrong.
+    """
+
+    __tablename__ = "accounts"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False)
+    # NOT NULL from the start though only the user's own currency is accepted for now.
+    # An account's currency is part of its identity, so adding it later would mean
+    # auditing every query written in the meantime that assumed all amounts compare.
+    currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
+    # The balance at the **start** of `opened_on` — entries on that day count on top of
+    # it. Stated the other way round, they would be counted twice.
+    opening_balance_cents: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    opened_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "type IN ('current','savings','cash','liability')", name="ck_accounts_type"
+        ),
+        Index("ix_accounts_user", "user_id"),
+        Index("uq_accounts_user_lower_name", "user_id", text("lower(name)"), unique=True),
+    )
+
+
 class Transaction(UUIDPk, Timestamped, Base):
     __tablename__ = "transactions"
 
@@ -232,6 +278,13 @@ class Transaction(UUIDPk, Timestamped, Base):
     )
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
+    # RESTRICT, not SET NULL as above: an orphaned category costs a label, an orphaned
+    # entry costs money out of a balance with nothing on screen to say so. NULL means
+    # the entry predates the ledger (see migration 0007) — it counts toward spending,
+    # never toward a balance.
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -248,6 +301,7 @@ class Transaction(UUIDPk, Timestamped, Base):
         CheckConstraint("source IN ('manual','nl_parse')", name="ck_transactions_source"),
         Index("ix_transactions_user_occurred", "user_id", text("occurred_on DESC")),
         Index("ix_transactions_user_category", "user_id", "category_id"),
+        Index("ix_transactions_account", "account_id"),
     )
 
 
@@ -260,7 +314,12 @@ class Budget(UUIDPk, Timestamped, Base):
     category_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE"), nullable=False
     )
-    month: Mapped[dt.date] = mapped_column(Date, nullable=False)  # always first of month
+    # The *start of the budgeting period*, which today is always the first of a calendar
+    # month. Read it as a period id rather than as "a month": every boundary in the app
+    # comes from ``aggregates.month_bounds``, so anchoring periods elsewhere (a payday
+    # month, 25th to 24th) stays a change to that one helper instead of a migration
+    # against the rows stored here and the unique constraint over them.
+    month: Mapped[dt.date] = mapped_column(Date, nullable=False)
     limit_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
     __table_args__ = (
@@ -278,7 +337,12 @@ class SavingsGoal(UUIDPk, Timestamped, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     target_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     due_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
-    archived_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    # Explicitly tz-aware. Left implicit, SQLAlchemy infers a naive DateTime() from the
+    # annotation, which is *not* what migration 0001 created (timestamptz) — and since
+    # tests build their schema from this metadata while production builds it from the
+    # migrations, the two disagreed silently. `test_schema_drift` now catches that class
+    # of divergence; this column was the one that proved it was possible.
+    archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class GoalContribution(UUIDPk, Timestamped, Base):

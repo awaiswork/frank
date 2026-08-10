@@ -12,6 +12,7 @@ const cat = (id: string, name: string, kind: Kind = 'expense'): Category => ({
 const tx = (categoryId: string | null, kind: Kind = 'expense'): Transaction => ({
   id: `t-${Math.random()}`,
   kind,
+  account_id: null,
   amount_cents: 100,
   description: 'x',
   merchant: null,

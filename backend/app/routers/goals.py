@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.deps import CurrentUser, DbSession
+from app.deps import CurrentUser, DbSession, Today
 from app.models import GoalContribution, SavingsGoal
 from app.schemas import (
     GoalContributionIn,
@@ -112,13 +112,17 @@ def update_goal(goal_id: uuid.UUID, body: GoalUpdate, user: CurrentUser, db: DbS
     status_code=status.HTTP_201_CREATED,
 )
 def add_contribution(
-    goal_id: uuid.UUID, body: GoalContributionIn, user: CurrentUser, db: DbSession
+    goal_id: uuid.UUID,
+    body: GoalContributionIn,
+    user: CurrentUser,
+    db: DbSession,
+    today: Today,
 ) -> GoalContribution:
     _owned_goal(db, user.id, goal_id)
     contribution = GoalContribution(
         goal_id=goal_id,
         amount_cents=body.amount_cents,
-        occurred_on=body.occurred_on or dt.date.today(),
+        occurred_on=body.occurred_on or today,
     )
     db.add(contribution)
     db.commit()

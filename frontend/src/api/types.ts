@@ -11,6 +11,8 @@ export interface User {
   id: string;
   email: string;
   currency: string;
+  /** IANA name. null means never set — the server reads dates as UTC until it is. */
+  timezone: string | null;
   monthly_income_cents: number | null;
   /** Verification is a soft gate — false means "show the banner", never "block". */
   email_verified: boolean;
@@ -30,9 +32,40 @@ export interface Category {
   color: string | null;
 }
 
+export type AccountType = 'current' | 'savings' | 'cash' | 'liability';
+
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  currency: string;
+  opening_balance_cents: number;
+  opened_on: string; // YYYY-MM-DD
+  archived_at: string | null;
+  /** Derived from the ledger on every read, never stored. */
+  balance_cents: number;
+  entry_count: number;
+}
+
+export interface AccountsPayload {
+  accounts: Account[];
+  total_cents: number;
+  /** null until the first account exists. Balances only count entries from here on. */
+  ledger_starts_on: string | null;
+}
+
+export interface AccountCreate {
+  name: string;
+  type: AccountType;
+  opening_balance_cents?: number;
+  opened_on?: string;
+}
+
 export interface Transaction {
   id: string;
   kind: Kind;
+  /** null means it predates the ledger — counts as spending, never toward a balance. */
+  account_id: string | null;
   amount_cents: number;
   description: string;
   merchant: string | null;
@@ -44,6 +77,7 @@ export interface Transaction {
 
 export interface TransactionCreate {
   kind?: Kind;
+  account_id?: string | null;
   amount_cents: number;
   description: string;
   merchant?: string | null;

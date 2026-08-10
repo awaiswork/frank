@@ -15,6 +15,7 @@ from app.models import Budget, Category, GoalContribution, SavingsGoal, Transact
 from app.services.aggregates import (
     budget_vs_actual,
     daily_burn_rate,
+    days_in_period,
     month_over_month_by_category,
     safe_to_spend,
     spend_by_category,
@@ -128,6 +129,49 @@ def test_safe_to_spend_uses_stated_income(db: Session) -> None:
     assert s.remaining_budgets_cents == 110_00  # (200-150) + (100-40)
     assert s.goal_contributions_cents == 50_00
     assert s.safe_to_spend_cents == 300_000 - 190_00 - 110_00 - 50_00
+
+
+def test_safe_to_spend_excludes_archived_goals(db: Session) -> None:
+    """Archiving a goal releases the money it was holding back.
+
+    Every other goal query already filters archived goals out; this one did not, so a
+    goal the user had stopped funding went on suppressing safe-to-spend for the rest of
+    the month — understating what they actually had left.
+    """
+    user = _user(db, income=1_000_00)
+    active = SavingsGoal(user_id=user.id, name="Trip", target_cents=500_00)
+    dropped = SavingsGoal(
+        user_id=user.id,
+        name="Abandoned",
+        target_cents=500_00,
+        archived_at=dt.datetime(2026, 6, 20, tzinfo=dt.UTC),
+    )
+    db.add_all([active, dropped])
+    db.flush()
+    db.add_all(
+        [
+            GoalContribution(
+                goal_id=active.id, amount_cents=40_00, occurred_on=dt.date(2026, 6, 3)
+            ),
+            GoalContribution(
+                goal_id=dropped.id, amount_cents=90_00, occurred_on=dt.date(2026, 6, 4)
+            ),
+        ]
+    )
+    db.flush()
+
+    s = safe_to_spend(db, user.id, user.monthly_income_cents, JUNE)
+    assert s.goal_contributions_cents == 40_00  # the archived goal's 90€ is not withheld
+    assert s.safe_to_spend_cents == 1_000_00 - 40_00
+
+
+def test_days_in_period_spans_month_lengths_and_year_end() -> None:
+    """Period length comes from ``month_bounds``, so it has to survive every edge."""
+    assert days_in_period(dt.date(2026, 6, 1)) == 30
+    assert days_in_period(dt.date(2026, 7, 1)) == 31
+    assert days_in_period(dt.date(2026, 2, 1)) == 28
+    assert days_in_period(dt.date(2028, 2, 1)) == 29  # leap February
+    assert days_in_period(dt.date(2026, 12, 1)) == 31  # rolls into the next year
 
 
 def test_safe_to_spend_falls_back_to_logged_income(db: Session) -> None:

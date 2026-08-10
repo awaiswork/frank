@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
+  useAccounts,
   useCategories,
   useCreateTransaction,
   useDeleteTransaction,
   useTransactions,
 } from '../api/hooks';
 import type { Kind } from '../api/types';
+import { useAuth } from '../auth/useAuth';
+import { lastAccount, rememberAccount } from '../lib/lastAccount';
 import { categoryColor, categoryTint } from '../lib/categoryColor';
 import { rankCategories } from '../lib/categories';
 import { currentMonth, shiftDays, todayISO } from '../lib/date';
@@ -55,7 +58,9 @@ export function QuickAdd({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 function QuickAddSheet({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth();
   const categories = useCategories();
+  const accounts = useAccounts();
   const transactions = useTransactions({ month: currentMonth() });
   const create = useCreateTransaction();
   const remove = useDeleteTransaction();
@@ -64,6 +69,9 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
   const [amount, setAmount] = useState('');
   const [kind, setKind] = useState<Kind>('expense');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  // Only what the user actually tapped. The account in force is derived below, so
+  // there is no effect racing the accounts query to seed it.
+  const [pickedAccount, setPickedAccount] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [occurredOn, setOccurredOn] = useState(todayISO);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -101,6 +109,25 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
 
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
+  const openAccounts = useMemo(
+    () => (accounts.data?.accounts ?? []).filter((a) => a.archived_at === null),
+    [accounts.data],
+  );
+
+  // Money leaves an account on an expense and lands in one on income. Saying "from"
+  // both ways would be wrong, and this is the wording transfers will extend.
+  const preposition = kind === 'income' ? 'to' : 'from';
+
+  // Derived rather than seeded in an effect: the accounts arrive after first paint,
+  // and an effect that writes state would render one frame with nothing selected.
+  // null here means the user has no accounts at all, which stays a valid way to log.
+  const accountId = useMemo(() => {
+    if (pickedAccount && openAccounts.some((a) => a.id === pickedAccount)) return pickedAccount;
+    if (!openAccounts.length) return null;
+    const remembered = user ? lastAccount(user.id) : null;
+    return (openAccounts.find((a) => a.id === remembered) ?? openAccounts[0]).id;
+  }, [pickedAccount, openAccounts, user]);
+
   function tapKey(key: string) {
     setError(null);
     if (key === '⌫') return setAmount((a) => a.slice(0, -1));
@@ -130,9 +157,11 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
         kind,
         occurred_on: occurredOn,
         category_id: categoryId,
+        account_id: accountId,
       },
       {
         onSuccess: (tx) => {
+          if (user && accountId) rememberAccount(user.id, accountId);
           setLogged({
             id: tx.id,
             amountCents: cents,
@@ -245,6 +274,46 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
                 />
                 <span className="num text-[30px] font-medium text-muted">€</span>
               </div>
+
+              {/* Where the money moved, read as part of the amount rather than as a
+                  second row of pills.
+
+                  Account and category are not the same kind of choice. The category
+                  changes almost every time; the account almost never does, and the last
+                  one is remembered anyway. Giving them matching chip rows implied they
+                  were equal weight, and left two unlabelled rows of pills separated only
+                  by the category dots — legible with three accounts, not with eight.
+                  Sitting under the figure it reads as a sentence ("23,50 € from
+                  Everyday"), takes one line instead of a wrapping row, and scales to any
+                  number of accounts because the list is inside the control.
+
+                  The preposition follows the direction, which is also the honest word:
+                  money leaves an account on an expense and lands in one on income. */}
+              {openAccounts.length > 0 && (
+                <div className="flex justify-center px-4 pb-4">
+                  {openAccounts.length === 1 ? (
+                    <span className="text-[13px] text-muted">
+                      {preposition} <span className="text-ink-2">{openAccounts[0].name}</span>
+                    </span>
+                  ) : (
+                    <label className="flex items-center gap-2 text-[13px] text-muted">
+                      {preposition}
+                      <select
+                        value={accountId ?? ''}
+                        onChange={(e) => setPickedAccount(e.target.value)}
+                        aria-label="Account"
+                        className="h-9 rounded-input border border-line-2 bg-field px-2.5 text-[13px] text-ink-2 focus:outline-none"
+                      >
+                        {openAccounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
 
               {/* Categories — one tap, most-used first */}
               <div className="flex flex-wrap gap-2 px-4 pb-4">

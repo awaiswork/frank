@@ -10,7 +10,15 @@ import { Wordmark } from './Logo';
 import { QuickAdd } from './QuickAdd';
 import { Portal } from './ui';
 
-type IconName = 'home' | 'advisor' | 'transactions' | 'budgets' | 'goals' | 'insight' | 'settings';
+type IconName =
+  | 'home'
+  | 'advisor'
+  | 'transactions'
+  | 'wealth'
+  | 'budgets'
+  | 'goals'
+  | 'insight'
+  | 'settings';
 
 function Icon({ name }: { name: IconName }) {
   const p = {
@@ -43,6 +51,14 @@ function Icon({ name }: { name: IconName }) {
         <svg {...p}>
           <path d="M8 6h13M8 12h13M8 18h13" />
           <path d="M3 6h.01M3 12h.01M3 18h.01" />
+        </svg>
+      );
+    case 'wealth':
+      return (
+        <svg {...p}>
+          <rect x="2.5" y="6" width="19" height="13" rx="2.5" />
+          <path d="M2.5 10h19" />
+          <path d="M17 14.5h1.5" />
         </svg>
       );
     case 'budgets':
@@ -101,6 +117,7 @@ const PRIMARY: ReadonlyArray<readonly [string, string, IconName]> = [
 ];
 const RECORDS: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/transactions', 'Transactions', 'transactions'],
+  ['/wealth', 'Wealth', 'wealth'],
   ['/budgets', 'Budgets', 'budgets'],
   ['/goals', 'Goals', 'goals'],
   ['/insights', 'Insight', 'insight'],
@@ -434,6 +451,7 @@ function MoreSheet({
 }) {
   const items: ReadonlyArray<readonly [string, string, IconName]> = [
     ['/advisor', 'Ask Frankly', 'advisor'],
+    ['/wealth', 'Wealth', 'wealth'],
     ['/goals', 'Goals', 'goals'],
     ['/insights', 'Insight', 'insight'],
     ['/settings', 'Settings', 'settings'],

@@ -8,7 +8,6 @@ wrap in Pydantic response models. All money is integer cents.
 
 from __future__ import annotations
 
-import calendar
 import datetime as dt
 import uuid
 from dataclasses import dataclass
@@ -19,9 +18,18 @@ from sqlalchemy.sql.selectable import Subquery
 
 from app.models import Budget, Category, GoalContribution, SavingsGoal, Transaction
 
+# --- Period boundaries -------------------------------------------------------
+#
+# Every date window in the app is derived from these three functions, and nothing
+# else computes a month boundary of its own. That is deliberate: a budgeting period
+# happens to be a calendar month today, but ``Budget.month`` is stored as the period's
+# start date, so anchoring periods to a payday instead would be a change to
+# ``month_bounds`` alone rather than a migration against every stored row. Keeping the
+# arithmetic in one place is what makes that true.
+
 
 def month_bounds(month_start: dt.date) -> tuple[dt.date, dt.date]:
-    """Half-open ``[first-of-month, first-of-next-month)`` range for date filters."""
+    """Half-open ``[period start, next period start)`` range for date filters."""
     if month_start.month == 12:
         nxt = dt.date(month_start.year + 1, 1, 1)
     else:
@@ -30,21 +38,31 @@ def month_bounds(month_start: dt.date) -> tuple[dt.date, dt.date]:
 
 
 def parse_month(month: str | None, *, today: dt.date) -> dt.date:
-    """``"2026-06"`` -> first of that month; ``None`` -> first of ``today``'s month."""
+    """``"2026-06"`` -> that period's start; ``None`` -> the period containing ``today``."""
     if month is None:
         return today.replace(day=1)
     year, mon = (int(part) for part in month.split("-"))
     return dt.date(year, mon, 1)
 
 
+def days_in_period(month_start: dt.date) -> int:
+    """How many days the period beginning at ``month_start`` runs for.
+
+    Derived from ``month_bounds`` rather than from the calendar, so it stays correct
+    for whatever a period is defined to be.
+    """
+    start, end = month_bounds(month_start)
+    return (end - start).days
+
+
 def _elapsed_fraction(month_start: dt.date, today: dt.date) -> float:
-    """How far through the month we are: 1.0 if it is already past, 0.0 if future."""
-    days_in_month = calendar.monthrange(month_start.year, month_start.month)[1]
+    """How far through the period we are: 1.0 if it is already past, 0.0 if future."""
+    length = days_in_period(month_start)
     if today < month_start:
         return 0.0
-    if today >= month_start + dt.timedelta(days=days_in_month):
+    if today >= month_start + dt.timedelta(days=length):
         return 1.0
-    return (today.day) / days_in_month
+    return (today.day) / length
 
 
 # --- §6.1  Spend by category for a month -------------------------------------
@@ -241,6 +259,10 @@ def safe_to_spend(
         .join(SavingsGoal, SavingsGoal.id == GoalContribution.goal_id)
         .where(
             SavingsGoal.user_id == user_id,
+            # Archived goals are money the user has stopped setting aside, so holding it
+            # back from safe-to-spend understates what they actually have. Every other
+            # goal query already excludes them; this one did not.
+            SavingsGoal.archived_at.is_(None),
             GoalContribution.occurred_on >= start,
             GoalContribution.occurred_on < end,
         )

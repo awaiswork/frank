@@ -33,6 +33,8 @@ export function Settings() {
           </Row>
           <div className="h-px bg-line" />
           <IncomeRow incomeCents={user?.monthly_income_cents ?? null} onSaved={setUser} />
+          <div className="h-px bg-line" />
+          <TimezoneRow timezone={user?.timezone ?? null} onSaved={setUser} />
         </Card>
       </Block>
 
@@ -98,6 +100,101 @@ function Block({ label, children }: { label: string; children: React.ReactNode }
     <div className="flex flex-col gap-2.5">
       <SectionLabel>{label}</SectionLabel>
       {children}
+    </div>
+  );
+}
+
+/** The browser's IANA list, or just the detected zone if the runtime is too old. */
+function zoneOptions(detected: string): string[] {
+  const supported =
+    typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+  return supported.length ? supported : [detected];
+}
+
+function TimezoneRow({
+  timezone,
+  onSaved,
+}: {
+  timezone: string | null;
+  onSaved: (user: User) => void;
+}) {
+  const update = useUpdateMe();
+  const [editing, setEditing] = useState(false);
+  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const [value, setValue] = useState(timezone ?? detected);
+
+  function save(next: string) {
+    update.mutate(
+      { timezone: next },
+      {
+        onSuccess: (u) => {
+          onSaved(u);
+          setEditing(false);
+        },
+      },
+    );
+  }
+
+  if (!editing) {
+    return (
+      <Row
+        label="Time zone"
+        hint={
+          timezone
+            ? 'Your day rolls over at midnight here.'
+            : `Not set — days roll over at UTC midnight. Looks like you're in ${detected}.`
+        }
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-[15px] font-semibold text-ink">{timezone ?? 'UTC'}</span>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setValue(timezone ?? detected);
+              setEditing(true);
+            }}
+          >
+            {timezone ? 'Edit' : 'Set'}
+          </Button>
+        </div>
+      </Row>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="text-[15px] font-semibold text-ink">Time zone</div>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <select
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-label="Time zone"
+          className="h-11 min-w-0 flex-1 rounded-input border border-line-2 bg-field px-3 text-[16px] text-ink"
+        >
+          {zoneOptions(detected).map((z) => (
+            <option key={z} value={z}>
+              {z}
+            </option>
+          ))}
+        </select>
+        <Button type="button" onClick={() => save(value)} disabled={update.isPending}>
+          {update.isPending ? 'Saving…' : 'Save'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+      </div>
+      {value !== detected && (
+        <button
+          type="button"
+          onClick={() => setValue(detected)}
+          className="self-start text-[13px] text-muted underline underline-offset-2"
+        >
+          Use {detected}, detected from this device
+        </button>
+      )}
+      {update.isError && <p className="text-[13px] text-over">Couldn't save — try again.</p>}
     </div>
   );
 }
