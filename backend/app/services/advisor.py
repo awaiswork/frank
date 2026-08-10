@@ -58,7 +58,7 @@ def build_context(db: Session, user: User, today: dt.date) -> dict[str, Any]:
     month_start = parse_month(None, today=today)
 
     budgets = budget_vs_actual(db, user.id, month_start, today=today)
-    sts = safe_to_spend(db, user.id, user.monthly_income_cents, month_start)
+    sts = safe_to_spend(db, user.id, user.monthly_income_cents, month_start, today=today)
     burn = daily_burn_rate(db, user.id, today=today)
 
     contributed = (

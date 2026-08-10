@@ -13,11 +13,12 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
-from app.models import Account, Category, RecurringTemplate
-from app.schemas import RecurringCreate, RecurringOut, RecurringUpdate
+from app.models import Account, Category, RecurringSkip, RecurringTemplate
+from app.schemas import RecurringCreate, RecurringOut, RecurringUpdate, SkipIn, UpcomingOut
 from app.services.recurring import occurrences
 
 router = APIRouter(prefix="/recurring", tags=["recurring"])
@@ -52,17 +53,37 @@ def _check_refs(
             )
 
 
-def _out(template: RecurringTemplate, today: dt.date) -> RecurringOut:
-    """`next_on` is derived, so it can never disagree with the schedule it describes."""
+def _skips_for(db: Session, template_ids: list[uuid.UUID]) -> dict[uuid.UUID, set[dt.date]]:
+    if not template_ids:
+        return {}
+    out: dict[uuid.UUID, set[dt.date]] = {}
+    for row in db.scalars(select(RecurringSkip).where(RecurringSkip.template_id.in_(template_ids))):
+        out.setdefault(row.template_id, set()).add(row.skip_on)
+    return out
+
+
+def _out(
+    template: RecurringTemplate, today: dt.date, skips: set[dt.date] | None = None
+) -> RecurringOut:
+    """`next_on` is derived, so it can never disagree with the schedule it describes.
+
+    Skipped dates are stepped over. Naming one as "next" would be the screen asserting
+    a payment the user has just said will not happen.
+    """
+    skipped = skips or set()
     upcoming = next(
-        occurrences(
-            cadence=template.cadence,
-            start_on=template.start_on,
-            end_on=template.end_on,
-            # A year ahead is far enough to always find the next one for any cadence
-            # we support, and bounds the walk for a template that has already ended.
-            through=today + dt.timedelta(days=400),
-            after=max(today, template.last_materialised_on or today),
+        (
+            occurs_on
+            for occurs_on in occurrences(
+                cadence=template.cadence,
+                start_on=template.start_on,
+                end_on=template.end_on,
+                # A year ahead is far enough to find the next one for any cadence we
+                # support, and bounds the walk for a template that has already ended.
+                through=today + dt.timedelta(days=400),
+                after=max(today, template.last_materialised_on or today),
+            )
+            if occurs_on not in skipped
         ),
         None,
     )
@@ -94,8 +115,101 @@ def list_recurring(
     stmt = select(RecurringTemplate).where(RecurringTemplate.user_id == user.id)
     if not include_archived:
         stmt = stmt.where(RecurringTemplate.archived_at.is_(None))
-    rows = db.scalars(stmt.order_by(RecurringTemplate.name)).all()
-    return [_out(row, today) for row in rows]
+    rows = list(db.scalars(stmt.order_by(RecurringTemplate.name)))
+    skips = _skips_for(db, [row.id for row in rows])
+    return [_out(row, today, skips.get(row.id)) for row in rows]
+
+
+@router.get("/upcoming", response_model=list[UpcomingOut], dependencies=[LedgerUpToDate])
+def upcoming(
+    user: CurrentUser,
+    db: DbSession,
+    today: Today,
+    days: int = Query(default=60, ge=1, le=400),
+) -> list[UpcomingOut]:
+    """What is still to come, computed on the fly.
+
+    Strictly after today: everything up to and including today has been written as a
+    real transaction already, so listing it here would show it twice.
+    """
+    through = today + dt.timedelta(days=days)
+    templates = list(
+        db.scalars(
+            select(RecurringTemplate).where(
+                RecurringTemplate.user_id == user.id,
+                RecurringTemplate.archived_at.is_(None),
+            )
+        )
+    )
+    skips: dict[uuid.UUID, set[dt.date]] = {}
+    if templates:
+        for row in db.scalars(
+            select(RecurringSkip).where(RecurringSkip.template_id.in_([t.id for t in templates]))
+        ):
+            skips.setdefault(row.template_id, set()).add(row.skip_on)
+
+    out: list[UpcomingOut] = []
+    for template in templates:
+        for occurs_on in occurrences(
+            cadence=template.cadence,
+            start_on=template.start_on,
+            end_on=template.end_on,
+            through=through,
+            after=today,
+        ):
+            out.append(
+                UpcomingOut(
+                    template_id=template.id,
+                    name=template.name,
+                    kind=template.kind,
+                    amount_cents=template.amount_cents,
+                    occurs_on=occurs_on,
+                    category_id=template.category_id,
+                    account_id=template.account_id,
+                    # Shown rather than hidden: a skipped rent is a decision the user
+                    # made, and it should be visible and reversible, not just absent.
+                    skipped=occurs_on in skips.get(template.id, set()),
+                )
+            )
+    return sorted(out, key=lambda item: (item.occurs_on, item.name))
+
+
+@router.post("/{template_id}/skips", status_code=status.HTTP_204_NO_CONTENT)
+def skip_occurrence(
+    template_id: uuid.UUID, body: SkipIn, user: CurrentUser, db: DbSession, today: Today
+) -> None:
+    """Say one occurrence will not happen, before it does.
+
+    Refused for a date already past, because by then the row either exists — delete it
+    — or generation has moved beyond it and a skip would change nothing while looking
+    as though it had.
+    """
+    _owned(db, user.id, template_id)
+    if body.skip_on <= today:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "That date has already passed — delete the entry instead.",
+        )
+    db.add(RecurringSkip(template_id=template_id, skip_on=body.skip_on))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()  # already skipped; saying so twice means the same thing
+
+
+@router.delete("/{template_id}/skips/{skip_on}", status_code=status.HTTP_204_NO_CONTENT)
+def unskip_occurrence(
+    template_id: uuid.UUID, skip_on: dt.date, user: CurrentUser, db: DbSession
+) -> None:
+    _owned(db, user.id, template_id)
+    row = db.scalar(
+        select(RecurringSkip).where(
+            RecurringSkip.template_id == template_id, RecurringSkip.skip_on == skip_on
+        )
+    )
+    if row is not None:
+        db.delete(row)
+        db.commit()
 
 
 @router.post("", response_model=RecurringOut, status_code=status.HTTP_201_CREATED)
@@ -121,6 +235,7 @@ def create_recurring(
     )
     db.add(template)
     db.commit()
+    # Brand new, so nothing can have been skipped yet.
     return _out(template, today)
 
 
@@ -154,7 +269,7 @@ def update_recurring(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "The end date is before the start date."
         )
     db.commit()
-    return _out(template, today)
+    return _out(template, today, _skips_for(db, [template.id]).get(template.id))
 
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)

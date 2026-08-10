@@ -136,6 +136,17 @@ export interface RecurringCreate {
   account_id?: string | null;
 }
 
+export interface Upcoming {
+  template_id: string;
+  name: string;
+  kind: Kind;
+  amount_cents: number;
+  occurs_on: string;
+  category_id: string | null;
+  account_id: string | null;
+  skipped: boolean;
+}
+
 export interface BudgetActual {
   category_id: string;
   category_name: string;
@@ -165,6 +176,8 @@ export interface SafeToSpend {
   spent_cents: number;
   remaining_budgets_cents: number;
   goal_contributions_cents: number;
+  /** Recurring expenses still due this month — why the figure above moved. */
+  upcoming_cents: number;
   safe_to_spend_cents: number;
 }
 

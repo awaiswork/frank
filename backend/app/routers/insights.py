@@ -34,7 +34,7 @@ def summary(
 ) -> InsightsSummaryOut:
     month_start = parse_month(month, today=today)
 
-    safe = safe_to_spend(db, user.id, user.monthly_income_cents, month_start)
+    safe = safe_to_spend(db, user.id, user.monthly_income_cents, month_start, today=today)
     spend = spend_by_category(db, user.id, month_start)
     burn = daily_burn_rate(db, user.id, today=today)
     mom = month_over_month_by_category(db, user.id, month_start)

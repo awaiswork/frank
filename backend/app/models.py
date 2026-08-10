@@ -313,6 +313,25 @@ class RecurringTemplate(UUIDPk, Timestamped, Base):
     )
 
 
+class RecurringSkip(UUIDPk, Timestamped, Base):
+    """One occurrence of a template that should not happen.
+
+    Suppresses the date in both places it would otherwise appear — materialisation and
+    the forecast. Only one of the two would be a bug in opposite directions: skipping
+    without suppressing the forecast reserves money for something cancelled, and the
+    other way round pays out for something the user said would not.
+    """
+
+    __tablename__ = "recurring_skips"
+
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("recurring_templates.id", ondelete="CASCADE"), nullable=False
+    )
+    skip_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+
+    __table_args__ = (UniqueConstraint("template_id", "skip_on", name="uq_recurring_skip"),)
+
+
 class Transaction(UUIDPk, Timestamped, Base):
     __tablename__ = "transactions"
 
