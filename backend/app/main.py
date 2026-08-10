@@ -10,6 +10,7 @@ from app.limits import limiter, rate_limit_handler
 from app.routers import (
     accounts,
     advisor,
+    assets,
     auth,
     budgets,
     categories,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(oauth.router)
     app.include_router(categories.router)
     app.include_router(accounts.router)
+    app.include_router(assets.router)
     app.include_router(transactions.router)
     app.include_router(budgets.router)
     app.include_router(goals.router)

@@ -1,12 +1,18 @@
 import { useState, type FormEvent } from 'react';
 import {
   useAccounts,
+  useAssets,
   useCreateAccount,
+  useCreateAsset,
   useDeleteAccount,
+  useNetWorth,
   useReconcileAccount,
   useUpdateAccount,
+  useUpdateAsset,
+  useValueAsset,
 } from '../api/hooks';
-import type { Account, AccountType } from '../api/types';
+import type { Account, AccountType, Asset, AssetGroup } from '../api/types';
+import { NetWorthTrend } from '../components/NetWorthTrend';
 import { Button, Card, EmptyState, Field, SectionLabel, TextInput } from '../components/ui';
 import { Money } from '../components/Money';
 import { todayISO } from '../lib/date';
@@ -62,11 +68,17 @@ function groupOf(account: Account): GroupKey {
 
 export function Wealth() {
   const accounts = useAccounts();
+  const assets = useAssets();
+  const worth = useNetWorth();
   const [adding, setAdding] = useState(false);
+  const [addingAsset, setAddingAsset] = useState(false);
 
   const rows = accounts.data?.accounts ?? [];
-  const total = accounts.data?.total_cents ?? 0;
+  const ownedThings = assets.data ?? [];
   const startsOn = accounts.data?.ledger_starts_on ?? null;
+  // The figure people came for is everything, not just what sits in accounts — so it
+  // comes from the same series the trend is drawn from, and the two cannot disagree.
+  const total = worth.data?.points.at(-1)?.total_cents ?? accounts.data?.total_cents ?? 0;
 
   return (
     <section className="animate-fade-up mx-auto flex max-w-[640px] flex-col gap-6">
@@ -90,6 +102,11 @@ export function Wealth() {
           <div className="num text-[34px] font-semibold tracking-[-0.02em]">
             <Money cents={total} />
           </div>
+          {worth.data && worth.data.points.length > 1 && (
+            <div className="mt-2">
+              <NetWorthTrend data={worth.data} />
+            </div>
+          )}
           {startsOn && (
             // Never let the total read as though it covers all the history the app
             // holds. Anything logged before the ledger opened is spending, not balance.
@@ -119,6 +136,24 @@ export function Wealth() {
 
       {rows.length === 0 && !adding && (
         <Button onClick={() => setAdding(true)}>Add your first account</Button>
+      )}
+
+      {ownedThings.length > 0 && (
+        <div className="flex flex-col gap-2.5">
+          <SectionLabel>Things you own</SectionLabel>
+          <Card className="flex flex-col gap-4">
+            {ownedThings.map((asset, i) => (
+              <AssetRow key={asset.id} asset={asset} last={i === ownedThings.length - 1} />
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {addingAsset && <AddAsset onDone={() => setAddingAsset(false)} />}
+      {!addingAsset && rows.length > 0 && (
+        <Button variant="secondary" onClick={() => setAddingAsset(true)}>
+          Add something you own
+        </Button>
       )}
 
       {GROUP_ORDER.map((key) => {
@@ -338,6 +373,177 @@ function AddAccount({ onDone }: { onDone: () => void }) {
         {create.isError && (
           <p className="text-[13px] text-over">
             Couldn't add that — you may already have an account with this name.
+          </p>
+        )}
+      </form>
+    </Card>
+  );
+}
+
+const ASSET_GROUPS: { value: AssetGroup; label: string }[] = [
+  { value: 'physical', label: 'Physical' },
+  { value: 'investment', label: 'Investment' },
+];
+
+/** Beyond this, a stated value has stopped describing anything much. */
+const STALE_DAYS = 90;
+
+function AssetRow({ asset, last }: { asset: Asset; last: boolean }) {
+  const value = useValueAsset();
+  const update = useUpdateAsset();
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState('');
+
+  const stale = (asset.days_since_valued ?? 0) > STALE_DAYS;
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const cents = parseAmountToCents(amount.replace('-', ''));
+    if (cents == null) return;
+    const signed = amount.trim().startsWith('-') ? -cents : cents;
+    value.mutate(
+      { id: asset.id, value_cents: signed },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          setAmount('');
+        },
+      },
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-[15px] font-semibold text-ink">{asset.name}</div>
+          {/* How old a stated value is matters more here than anywhere else — nothing
+              updates it on its own, so a number can quietly become fiction. */}
+          <div className={`mt-0.5 text-[13px] ${stale ? 'text-over' : 'text-muted'}`}>
+            {asset.last_valued_on
+              ? `valued ${asset.days_since_valued === 0 ? 'today' : `${asset.days_since_valued} days ago`}`
+              : 'never valued'}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className="num text-[16px] font-semibold">
+            <Money cents={asset.value_cents ?? 0} tone={stale ? 'muted' : 'default'} />
+          </span>
+          <Button variant="secondary" onClick={() => setEditing((v) => !v)}>
+            Revalue
+          </Button>
+        </div>
+      </div>
+
+      {editing && (
+        <form onSubmit={submit} className="flex flex-col gap-2.5 rounded-input bg-inset p-3">
+          <Field label="What's it worth now?">
+            <TextInput
+              autoFocus
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={String((asset.value_cents ?? 0) / 100)}
+            />
+          </Field>
+          <div className="flex items-center gap-2.5">
+            <Button type="submit" disabled={value.isPending}>
+              {value.isPending ? 'Saving…' : 'Save'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => update.mutate({ id: asset.id, archived: true })}
+            >
+              Sold it
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+      {!last && <div className="h-px bg-line" />}
+    </div>
+  );
+}
+
+function AddAsset({ onDone }: { onDone: () => void }) {
+  const create = useCreateAsset();
+  const [name, setName] = useState('');
+  const [group, setGroup] = useState<AssetGroup>('physical');
+  const [amount, setAmount] = useState('');
+  const [valuedOn, setValuedOn] = useState(todayISO());
+
+  const cents = parseAmountToCents(amount);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || cents == null) return;
+    create.mutate(
+      { name: name.trim(), group, value_cents: cents, valued_on: valuedOn },
+      { onSuccess: onDone },
+    );
+  }
+
+  return (
+    <Card>
+      <form onSubmit={submit} className="flex flex-col gap-4">
+        <Field label="What is it?">
+          <TextInput
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Car"
+          />
+        </Field>
+        <Field label="Kind">
+          <div className="flex flex-wrap gap-2">
+            {ASSET_GROUPS.map((g) => (
+              <button
+                key={g.value}
+                type="button"
+                onClick={() => setGroup(g.value)}
+                aria-pressed={group === g.value}
+                className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
+                  group === g.value
+                    ? 'bg-ink text-paper'
+                    : 'border border-line-2 bg-surface text-ink-2'
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <Field label="What's it worth?">
+          <TextInput
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="8000"
+          />
+        </Field>
+        <Field label="As of">
+          <TextInput type="date" value={valuedOn} onChange={(e) => setValuedOn(e.target.value)} />
+        </Field>
+        {/* Backdating is the useful case, not an edge one: it is how the trend gets a
+            past worth looking at instead of a step on the day you signed up. */}
+        <p className="text-[13px] text-muted">
+          Frankly counts this from the date you give it. Put in an older date and the trend fills in
+          behind you.
+        </p>
+        <div className="flex items-center gap-2.5">
+          <Button type="submit" disabled={!name.trim() || cents == null || create.isPending}>
+            {create.isPending ? 'Adding…' : 'Add it'}
+          </Button>
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+        {create.isError && (
+          <p className="text-[13px] text-over">
+            Couldn't add that — you may already have something with this name.
           </p>
         )}
       </form>
