@@ -69,6 +69,20 @@ export function useUpdateAccount() {
   });
 }
 
+export function useReconcileAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, actualBalanceCents }: { id: string; actualBalanceCents: number }) =>
+      apiFetch<Account>(`/accounts/${id}/reconcile`, {
+        method: 'POST',
+        body: json({ actual_balance_cents: actualBalanceCents }),
+      }),
+    // Writes a transaction, so it moves everything a transaction moves — including the
+    // activity list, where the correction has to be visible.
+    onSuccess: () => invalidateMoney(client),
+  });
+}
+
 export function useDeleteAccount() {
   const client = useQueryClient();
   return useMutation({

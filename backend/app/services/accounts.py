@@ -36,6 +36,15 @@ LEG_SIGNS: dict[str, tuple[int, int | None]] = {
     "income": (1, None),
     "expense": (-1, None),
     "transfer": (-1, 1),
+    # Money coming back from a returned purchase. It lands in an account like income
+    # does; what makes it a refund rather than income is that it also gives back the
+    # spending it undoes — see SPEND_SIGNS in services/aggregates.
+    "refund": (1, None),
+    # A reconciliation: the difference between what the ledger computed and what the
+    # bank actually says. Two kinds rather than one signed amount, so `amount_cents`
+    # stays a positive magnitude and direction keeps living in the kind.
+    "adjustment_up": (1, None),
+    "adjustment_down": (-1, None),
 }
 
 

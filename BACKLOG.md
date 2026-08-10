@@ -30,7 +30,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 0b | Per-user timezone | S | **Done** |
 | 1 | Accounts (no transfers) | M | **Done** |
 | 2a | Transfers | M | **Done** |
-| 2b | Refunds + reconcile | M | Not started |
+| 2b | Refunds + reconcile | M | **Done** |
 | 3 | IOUs / informal lending | S | Not started |
 | 4a | Recurring — templates + materialisation | M | Not started |
 | 4b | Recurring — forecast into safe-to-spend | S | Not started |
@@ -266,24 +266,48 @@ is its own change, not one to bundle with a balance-query rewrite.
 
 ---
 
-### Phase 2b — Refunds + reconcile · M
+### Phase 2b — Refunds + reconcile · M · **done**
 
-Both change what the *spending* aggregates say, which is why they sit here rather than
-with transfers, and both still have an open design question.
+The first change to rewrite the spending aggregates. Five of the six now sign their
+sums through one helper (`SPEND_SIGNS` + `_spent()` + `_is_spend()`) rather than five
+copies of the rule.
 
-- **Refunds** reduce spend in their category rather than counting as income. Two
-  candidates: a signed `CASE` in the expense sums, or negative-signed companion rows.
-- **Reconcile** — "the real balance is X" writes an adjustment. It needs a `kind`, not a
-  `source`: `source` is provenance and no aggregate reads it. The open question is
-  direction. `amount_cents > 0` is a documented invariant, but a correction is
-  bidirectional and has no counter account to carry the sign, so either the CHECK relaxes
-  for this one kind or the sign lives somewhere else. Worth deciding deliberately.
+**A refund is a negative expense, not income.** It gives back the category's spend, the
+budget's allowance and the burn rate, and leaves what someone earned alone — logged as
+income it would inflate earnings *and* raise safe-to-spend, counting the money twice.
+Stored as a positive magnitude with direction in the kind, the pattern the schema
+already uses. Rejected: negative-amount expenses, which need no aggregate changes at
+all but relax `amount_cents > 0` for every row.
 
-Whatever is chosen, `LEG_SIGNS` and the `ck_transactions_kind` guard force both kinds to
-declare what they do to a balance, and the conservation and invariance tests from 2a are
-already in place to catch a mistake.
+**The invariant needed restating, and that is the durable result of this phase.**
+"Positive equality" was too narrow once filters became `IN ('expense','refund')`. The
+real property is: **allow-list, never deny-list.** `!= 'income'` selects the same rows
+today and diverges the moment a kind is added. `test_spend_signs_are_an_allow_list`
+asserts the partition — which kinds are spending, which are deliberately outside every
+figure — so a new kind has to declare its side. Verified: swapping the allow-list for
+`!= 'income'` fails three tests.
 
-*Risk:* the aggregate rewrites. Unlike 2a, these queries genuinely change.
+**Reconcile writes a visible correction**, as `adjustment_up` / `adjustment_down`. Two
+kinds rather than one signed amount keeps `amount_cents > 0` intact. Rejected: quietly
+editing `opening_balance_cents`, which needs no migration but makes "the balance at the
+start of `opened_on`" false, silently moves every past balance, and leaves nothing on
+screen to say a correction happened. The form states the correction it will write
+before writing it, and the row appears in Activity.
+
+*Schema:* migration `0009` — widened kind CHECK, plus `source` gaining `reconcile`
+(provenance only; no aggregate reads it). Additive, round-trips.
+
+**Caught by measuring rather than assuming:** the refund row action was `opacity-0` but
+still reserved 38px, and on a 320px row that came straight out of the merchant name —
+"jacket" rendered as "j…". Now `hidden` below `sm`, where there is no room for it
+anyway. The four-segment capture row, which I expected to overflow at 320px, fits.
+
+Checked end to end in a browser: a €40 jacket refunded leaves spend at 0, income
+unchanged at 320000, the balance restored, and the day's net at `+0,00 €`.
+
+**Known gap:** row actions (Refund, and the pre-existing Delete) are hover-only, so
+they are desktop-only. A standalone refund is reachable on a phone through the capture
+sheet's Refund mode; deleting on a phone was already unreachable and remains so.
 
 ---
 

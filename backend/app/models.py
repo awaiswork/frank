@@ -304,7 +304,10 @@ class Transaction(UUIDPk, Timestamped, Base):
     llm_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("kind IN ('expense','income','transfer')", name="ck_transactions_kind"),
+        CheckConstraint(
+            "kind IN ('expense','income','transfer','refund','adjustment_up','adjustment_down')",
+            name="ck_transactions_kind",
+        ),
         # A transfer needs both ends, they must differ, and it carries no category — so
         # it can never reach a budget however the row is written. Enforced here rather
         # than trusted to the router, because a constraint cannot be forgotten.
@@ -318,7 +321,9 @@ class Transaction(UUIDPk, Timestamped, Base):
             name="ck_transactions_transfer_shape",
         ),
         CheckConstraint("amount_cents > 0", name="ck_transactions_amount_positive"),
-        CheckConstraint("source IN ('manual','nl_parse')", name="ck_transactions_source"),
+        CheckConstraint(
+            "source IN ('manual','nl_parse','reconcile')", name="ck_transactions_source"
+        ),
         Index("ix_transactions_user_occurred", "user_id", text("occurred_on DESC")),
         Index("ix_transactions_user_category", "user_id", "category_id"),
         Index("ix_transactions_account", "account_id"),

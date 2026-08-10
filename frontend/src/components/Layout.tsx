@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
 import { useFeatures } from '../api/hooks';
 import { useAuth } from '../auth/useAuth';
-import { CaptureContext } from '../capture/CaptureContext';
+import { CaptureContext, type CapturePrefill } from '../capture/CaptureContext';
 import { hasOnboarded } from '../lib/onboarding';
 import { useModal } from '../lib/useModal';
 import { AmbientField } from './AmbientField';
@@ -166,11 +166,20 @@ export function Layout() {
   const [theme, toggleTheme] = useTheme();
   const { features, ready } = useFeatures();
   const [adding, setAdding] = useState(false);
+  const [prefill, setPrefill] = useState<CapturePrefill | undefined>(undefined);
   const [moreOpen, setMoreOpen] = useState(false);
   const advisorSoon = ready && !features.advisor;
 
   // The one handle screens get on the capture sheet, so there is only ever one.
-  const capture = useMemo(() => ({ open: () => setAdding(true) }), []);
+  const capture = useMemo(
+    () => ({
+      open: (next?: CapturePrefill) => {
+        setPrefill(next);
+        setAdding(true);
+      },
+    }),
+    [],
+  );
 
   // MoreSheet is reachable only from the mobile tab bar and hides itself at lg.
   // Widening the window past that would leave it mounted but display:none —
@@ -392,7 +401,7 @@ export function Layout() {
         />
       )}
 
-      <QuickAdd open={adding} onClose={() => setAdding(false)} />
+      <QuickAdd open={adding} prefill={prefill} onClose={() => setAdding(false)} />
     </CaptureContext.Provider>
   );
 }

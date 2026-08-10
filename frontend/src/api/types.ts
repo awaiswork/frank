@@ -3,9 +3,10 @@
 /** A category is only ever one of these two, and its own DB CHECK says so. */
 export type Kind = 'expense' | 'income';
 
-/** What a transaction can be. Wider than Kind: money can also move between your own
- *  accounts, which is neither spending nor income. */
-export type TransactionKind = Kind | 'transfer';
+/** What a transaction can be. Wider than Kind: money can move between your own
+ *  accounts, come back from a returned purchase, or be corrected against a real
+ *  balance — none of which is spending or income. */
+export type TransactionKind = Kind | 'transfer' | 'refund' | 'adjustment_up' | 'adjustment_down';
 
 export interface TokenOut {
   access_token: string;

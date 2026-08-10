@@ -14,8 +14,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.deps import CurrentUser, DbSession, Today
-from app.models import Account, User
-from app.schemas import AccountCreate, AccountOut, AccountsOut, AccountUpdate
+from app.models import Account, Transaction, User
+from app.schemas import AccountCreate, AccountOut, AccountsOut, AccountUpdate, ReconcileIn
 from app.services.accounts import balances, earliest_opened_on, has_entries
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -123,6 +123,58 @@ def update_account(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "You already have an account with that name"
         ) from exc
+    return _one(db, user.id, account_id)
+
+
+@router.post("/{account_id}/reconcile", response_model=AccountOut)
+def reconcile_account(
+    account_id: uuid.UUID,
+    body: ReconcileIn,
+    user: CurrentUser,
+    db: DbSession,
+    today: Today,
+) -> AccountOut:
+    """Record the gap between what we computed and what the bank actually says.
+
+    Written as a transaction, not as a quiet edit to `opening_balance_cents`. That
+    column means "the balance at the start of `opened_on`" — absorbing today's drift
+    into it would make the statement false, silently move every past balance, and
+    leave nothing on screen to say a correction ever happened. A balance that changes
+    for no visible reason is exactly the failure this app exists not to have.
+    """
+    account = _owned_account(db, user.id, account_id)
+    if account.archived_at is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That account is archived")
+
+    current = next(
+        (
+            row.balance_cents
+            for row in balances(db, user.id, include_archived=True)
+            if row.account.id == account_id
+        ),
+        None,
+    )
+    if current is None:  # pragma: no cover — ownership was just established
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Account not found")
+
+    delta = body.actual_balance_cents - current
+    if delta == 0:
+        # Nothing drifted. Writing a zero-amount row would fail the positivity check
+        # anyway, and a correction of nothing is not worth a line in someone's history.
+        return _one(db, user.id, account_id)
+
+    db.add(
+        Transaction(
+            user_id=user.id,
+            account_id=account_id,
+            kind="adjustment_up" if delta > 0 else "adjustment_down",
+            amount_cents=abs(delta),
+            description="Balance correction",
+            occurred_on=body.occurred_on or today,
+            source="reconcile",
+        )
+    )
+    db.commit()
     return _one(db, user.id, account_id)
 
 

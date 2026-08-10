@@ -13,7 +13,17 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 # a transfer, and its own DB CHECK says so. Kept separate from TransactionKind so
 # widening what a *transaction* can be does not quietly widen those.
 Kind = Literal["expense", "income"]
-TransactionKind = Literal["expense", "income", "transfer"]
+TransactionKind = Literal[
+    "expense",
+    "income",
+    "transfer",
+    # A returned purchase: gives back spending rather than counting as income.
+    "refund",
+    # A reconciliation against the real balance. Two kinds so `amount_cents` stays a
+    # positive magnitude and the direction keeps living in the kind.
+    "adjustment_up",
+    "adjustment_down",
+]
 
 
 class RegisterIn(BaseModel):
@@ -141,6 +151,13 @@ class AccountOut(BaseModel):
     # Derived, never stored — see services/accounts.py.
     balance_cents: int
     entry_count: int
+
+
+class ReconcileIn(BaseModel):
+    """ "The real balance is X." The difference becomes a visible correction."""
+
+    actual_balance_cents: int
+    occurred_on: dt.date | None = None  # None -> the user's today
 
 
 class AccountsOut(BaseModel):

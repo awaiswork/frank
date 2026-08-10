@@ -1,5 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { useAccounts, useCreateAccount, useDeleteAccount, useUpdateAccount } from '../api/hooks';
+import {
+  useAccounts,
+  useCreateAccount,
+  useDeleteAccount,
+  useReconcileAccount,
+  useUpdateAccount,
+} from '../api/hooks';
 import type { Account, AccountType } from '../api/types';
 import { Button, Card, EmptyState, Field, SectionLabel, TextInput } from '../components/ui';
 import { Money } from '../components/Money';
@@ -102,6 +108,7 @@ function AccountRow({ account, last }: { account: Account; last: boolean }) {
   const update = useUpdateAccount();
   const remove = useDeleteAccount();
   const [open, setOpen] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -133,6 +140,9 @@ function AccountRow({ account, last }: { account: Account; last: boolean }) {
             Opened {account.opened_on} at {formatMoney(account.opening_balance_cents)}
           </span>
           <span className="grow" />
+          <Button variant="ghost" onClick={() => setReconciling((v) => !v)}>
+            Reconcile
+          </Button>
           {account.entry_count === 0 ? (
             <Button
               variant="ghost"
@@ -152,8 +162,54 @@ function AccountRow({ account, last }: { account: Account; last: boolean }) {
           )}
         </div>
       )}
+      {open && reconciling && <Reconcile account={account} onDone={() => setReconciling(false)} />}
       {!last && <div className="h-px bg-line" />}
     </div>
+  );
+}
+
+function Reconcile({ account, onDone }: { account: Account; onDone: () => void }) {
+  const reconcile = useReconcileAccount();
+  const [value, setValue] = useState(String(account.balance_cents / 100));
+
+  const actual = parseAmountToCents(value.replace('-', ''));
+  const signed = actual == null ? null : value.trim().startsWith('-') ? -actual : actual;
+  const delta = signed == null ? null : signed - account.balance_cents;
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (signed == null) return;
+    reconcile.mutate({ id: account.id, actualBalanceCents: signed }, { onSuccess: onDone });
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-2.5 rounded-input bg-inset p-3">
+      <Field label="What does the bank actually say?">
+        <TextInput
+          autoFocus
+          inputMode="decimal"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </Field>
+      {/* Says what will be written before it is written. The correction shows up in
+          the activity list afterwards — a balance that changes with nothing to explain
+          it is the thing this app must never do. */}
+      <p className="text-[13px] text-muted">
+        {delta == null || delta === 0
+          ? 'No correction needed — that matches.'
+          : `Frankly will log a correction of ${formatMoney(delta, { signed: true })}.`}
+      </p>
+      <div className="flex items-center gap-2.5">
+        <Button type="submit" disabled={signed == null || reconcile.isPending}>
+          {reconcile.isPending ? 'Saving…' : 'Correct it'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+      {reconcile.isError && <p className="text-[13px] text-over">Couldn't save — try again.</p>}
+    </form>
   );
 }
 
