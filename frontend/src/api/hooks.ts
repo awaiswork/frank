@@ -7,6 +7,8 @@ import type {
   AccountCreate,
   AccountsPayload,
   AdviceHistory,
+  Asset,
+  AssetGroup,
   BudgetActual,
   Category,
   DailyNote,
@@ -14,6 +16,7 @@ import type {
   Goal,
   InsightsSummary,
   LendPayload,
+  NetWorth,
   NlDraft,
   Recurring,
   RecurringCreate,
@@ -168,6 +171,55 @@ export function useParseNl() {
   return useMutation({
     mutationFn: (text: string) =>
       apiFetch<NlDraft[]>('/nl/parse', { method: 'POST', body: json({ text }) }),
+  });
+}
+
+// --- Assets and net worth ----------------------------------------------------
+
+export function useAssets() {
+  return useQuery({ queryKey: ['assets'], queryFn: () => apiFetch<Asset[]>('/assets') });
+}
+
+export function useNetWorth() {
+  return useQuery({
+    queryKey: ['net-worth'],
+    queryFn: () => apiFetch<NetWorth>('/assets/net-worth'),
+  });
+}
+
+function invalidateWorth(client: QueryClient): void {
+  void client.invalidateQueries({ queryKey: ['assets'] });
+  void client.invalidateQueries({ queryKey: ['net-worth'] });
+}
+
+export function useCreateAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      group: AssetGroup;
+      value_cents: number;
+      valued_on?: string;
+    }) => apiFetch<Asset>('/assets', { method: 'POST', body: json(body) }),
+    onSuccess: () => invalidateWorth(client),
+  });
+}
+
+export function useValueAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; value_cents: number; valued_on?: string }) =>
+      apiFetch<Asset>(`/assets/${id}/valuations`, { method: 'POST', body: json(body) }),
+    onSuccess: () => invalidateWorth(client),
+  });
+}
+
+export function useUpdateAsset() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; archived?: boolean; name?: string }) =>
+      apiFetch<Asset>(`/assets/${id}`, { method: 'PATCH', body: json(body) }),
+    onSuccess: () => invalidateWorth(client),
   });
 }
 

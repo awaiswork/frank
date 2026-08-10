@@ -34,7 +34,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 3 | IOUs / informal lending | S | **Done** |
 | 4a | Recurring — templates + materialisation | L | **Done** |
 | 4b | Recurring — forecast + skip | M | **Done** |
-| 5 | Assets + net worth trend | M | Not started |
+| 5 | Assets + net worth trend | M | **Done** |
 | 6 | Weekly digest email | M | Not started |
 | 7 | Income flows / allocation *(optional)* | S | Not started |
 | 8 | True multi-currency | L | Not started |
@@ -464,28 +464,47 @@ to a payday — a monthly recurrence would then clamp to the wrong length. It us
 
 ---
 
-### Phase 5 — Assets + net worth trend · M
+### Phase 5 — Assets + net worth trend · M · **done**
 
-`assets` (`user_id, name, group ∈ physical|investment, archived_at`) and append-only
-`asset_valuations (asset_id, valued_on DATE, value_cents)` with
-`UNIQUE (asset_id, valued_on)`.
+`assets` + append-only `asset_valuations`, and net worth as a derived time series. The
+counter-proposal from the original planning session, built.
 
-> **net worth on date D** = Σ(derived account balances at D)
->                         + Σ(per asset: most recent valuation with `valued_on <= D`)
+**The argument against snapshots, demonstrated rather than asserted.** Live: a car
+valued only today made net worth "jump" 2 500 → 10 500 on one point, with `complete_from`
+correctly marking the whole earlier line as incomplete. Stating what the car had been
+worth in February then rewrote the trend from February and moved `complete_from` back
+with it. A snapshot taken in February could not have been corrected by information that
+arrived in August — it would have sat there disagreeing with the ledger, with no way to
+tell which was right.
 
-A complete time series computed on read — no cron, no scheduler, no gaps, and correct
-under backdated edits, which snapshots never are. "Last valued on" and the stale-valuation
-flag fall out of `max(valued_on)`. Entering a valuation takes a date, so a purchase price
-can be backfilled for real history from day one.
+**The honesty problem is the real work here.** Value something for the first time and net
+worth rises by it — nothing was gained; Frankly was told something. Rejected: extending
+the earliest valuation backwards (fabrication) and hiding the trend until everything is
+valued (useless). Instead `complete_from` is the earliest date at which every account and
+live asset was already known; the line is drawn dashed before it, and says why.
 
-Investments stay manual. No broker integrations, no price feeds.
+**I then made that exact mistake in my own component and caught it on screen.** The
+caption read *"Up 10 500,00 € over this stretch"* — measured from a point the caption
+itself says is not comparable, asserting precisely what the dashing warns against. It now
+measures from `complete_from` ("Down 1 500,00 € since February 2026"), with a test
+confirmed to fail otherwise.
 
-*Engineering caution:* a 12-point trend must be **one** query using `generate_series` and
-a window function. On Neon's free tier per-query latency dominates, and twelve serial
-queries behind a cold start is a visibly slow screen.
+**Selling needs no special case:** an archived asset counts its last stated value up to
+`archived_at` and nothing after, so the trend falls on the day of the sale by itself.
 
-*Note:* no charting library is installed — the existing charts are hand-rolled SVG and a
-sparkline should be too. Adding one is a conversation, not an assumption.
+*Schema:* migration `0013` — `assets`, `asset_valuations` with one valuation per asset
+per day. `value_cents` is signed, unlike every other money column, because a thing can be
+worth less than nothing.
+
+*Query shape:* two queries and a Python fold, not one windowed statement. The constraint
+that matters here is round trips behind a cold start, and an as-of join plus a running
+total in a single statement is materially harder to verify than the arithmetic it
+replaces. Stated plainly rather than presented as the SQL showpiece.
+
+*Charting:* hand-rolled SVG polyline, like the existing donut and bars. No dependency.
+
+Also proves conservation **across the whole series** — a transfer left all twelve points
+identical — where 2a only proved it at a point.
 
 ---
 

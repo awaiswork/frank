@@ -271,6 +271,56 @@ class Account(UUIDPk, Timestamped, Base):
     )
 
 
+class Asset(UUIDPk, Timestamped, Base):
+    """Something owned that has no ledger — a car, a flat, a fund held elsewhere.
+
+    Nothing transacts against it. There is only what someone says it is worth and when
+    they said so, which is why this is not an account: an account is opening balance
+    plus entries, and there are no entries here.
+    """
+
+    __tablename__ = "assets"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    group: Mapped[str] = mapped_column(Text, nullable=False)
+    # Selling needs no special case: an archived asset counts its last stated value up
+    # to this moment and nothing after, so the trend falls on the day of the sale.
+    archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("\"group\" IN ('physical','investment')", name="ck_assets_group"),
+        Index("ix_assets_user", "user_id"),
+        Index("uq_assets_user_lower_name", "user_id", text("lower(name)"), unique=True),
+    )
+
+
+class AssetValuation(UUIDPk, Timestamped, Base):
+    """What an asset was said to be worth, on a day. Append-only.
+
+    Net worth at a past date reads the most recent valuation on or before it, so a
+    valuation entered late but dated correctly rewrites the trend from that point. A
+    table of snapshots could not — it would disagree with the ledger and offer no way
+    to tell which was right.
+    """
+
+    __tablename__ = "asset_valuations"
+
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+    )
+    valued_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    # Signed, unlike every other money column: a thing can be worth less than nothing.
+    value_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("asset_id", "valued_on", name="uq_asset_valuation_day"),
+        Index("ix_asset_valuations_asset", "asset_id", "valued_on"),
+    )
+
+
 class RecurringTemplate(UUIDPk, Timestamped, Base):
     """A thing that repeats — rent, a salary, a subscription.
 

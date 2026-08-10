@@ -246,6 +246,55 @@ class SkipIn(BaseModel):
     skip_on: dt.date
 
 
+AssetGroup = Literal["physical", "investment"]
+
+
+class AssetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    group: AssetGroup = "physical"
+    # Signed: a thing can be worth less than nothing.
+    value_cents: int
+    valued_on: dt.date | None = None  # None -> the user's today
+
+
+class AssetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    group: AssetGroup | None = None
+    archived: bool | None = None
+
+
+class ValuationIn(BaseModel):
+    value_cents: int
+    valued_on: dt.date | None = None
+
+
+class AssetOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    group: str
+    archived_at: dt.datetime | None
+    # The latest stated value, and when it was stated. None before anything is said.
+    value_cents: int | None
+    last_valued_on: dt.date | None
+    # Reported rather than judged: how stale a car and an index fund each are is not
+    # the same question, and the answer belongs where it is being shown.
+    days_since_valued: int | None
+
+
+class NetWorthPointOut(BaseModel):
+    on: dt.date
+    accounts_cents: int
+    assets_cents: int
+    total_cents: int
+
+
+class NetWorthOut(BaseModel):
+    points: list[NetWorthPointOut]
+    # Earliest date the line is comparable. Before it, something now on file was not
+    # yet known, so a rise there is Frankly learning rather than the user gaining.
+    complete_from: dt.date | None
+
+
 class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

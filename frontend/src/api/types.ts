@@ -108,6 +108,33 @@ export interface TransactionCreate {
   category_id?: string | null;
 }
 
+export type AssetGroup = 'physical' | 'investment';
+
+export interface Asset {
+  id: string;
+  name: string;
+  group: AssetGroup;
+  archived_at: string | null;
+  /** The latest stated value. null before anything has been said. */
+  value_cents: number | null;
+  last_valued_on: string | null;
+  days_since_valued: number | null;
+}
+
+export interface NetWorthPoint {
+  on: string;
+  accounts_cents: number;
+  assets_cents: number;
+  total_cents: number;
+}
+
+export interface NetWorth {
+  points: NetWorthPoint[];
+  /** Earliest date the line is comparable. Before it, something now on file wasn't
+   *  known yet — a rise there is Frankly learning, not the user gaining. */
+  complete_from: string | null;
+}
+
 export type Cadence = 'weekly' | 'monthly' | 'yearly';
 
 export interface Recurring {
