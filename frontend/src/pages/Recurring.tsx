@@ -5,9 +5,11 @@ import {
   useCreateRecurring,
   useDeleteRecurring,
   useRecurring,
+  useSkipOccurrence,
+  useUpcoming,
   useUpdateRecurring,
 } from '../api/hooks';
-import type { Cadence, Kind, Recurring as RecurringItem } from '../api/types';
+import type { Cadence, Kind, Recurring as RecurringItem, Upcoming } from '../api/types';
 import { Money } from '../components/Money';
 import { Button, Card, EmptyState, Field, SectionLabel, TextInput } from '../components/ui';
 import { todayISO } from '../lib/date';
@@ -76,6 +78,7 @@ export function Recurring() {
 
       <Group label="Going out" items={expense} />
       <Group label="Coming in" items={income} />
+      {rows.length > 0 && <UpcomingList />}
     </section>
   );
 }
@@ -285,5 +288,67 @@ function AddRecurring({ onDone }: { onDone: () => void }) {
         {create.isError && <p className="text-[13px] text-over">Couldn't save — try again.</p>}
       </form>
     </Card>
+  );
+}
+
+function UpcomingList() {
+  const upcoming = useUpcoming();
+  const rows = upcoming.data ?? [];
+  if (!rows.length) return null;
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <SectionLabel>Still to come</SectionLabel>
+      {/* Expenses here are already held back from safe-to-spend, so this is where you
+          check what that figure is accounting for — and skip anything that won't
+          actually happen, which releases the money again. */}
+      <Card className="flex flex-col gap-4">
+        {rows.map((item, i) => (
+          <UpcomingRow
+            key={`${item.template_id}-${item.occurs_on}`}
+            item={item}
+            last={i === rows.length - 1}
+          />
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+function UpcomingRow({ item, last }: { item: Upcoming; last: boolean }) {
+  const skip = useSkipOccurrence();
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div
+            className={`truncate text-[15px] font-semibold ${
+              item.skipped ? 'text-faint line-through' : 'text-ink'
+            }`}
+          >
+            {item.name}
+          </div>
+          <div className="mt-0.5 text-[13px] text-muted">{whenLabel(item.occurs_on)}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2.5">
+          <span className={`num text-[15px] font-semibold ${item.skipped ? 'text-faint' : ''}`}>
+            <Money
+              cents={item.amount_cents}
+              tone={item.skipped ? 'muted' : item.kind === 'income' ? 'go' : 'default'}
+            />
+          </span>
+          <Button
+            variant="ghost"
+            disabled={skip.isPending}
+            onClick={() =>
+              skip.mutate({ id: item.template_id, on: item.occurs_on, skip: !item.skipped })
+            }
+          >
+            {item.skipped ? 'Undo' : 'Skip'}
+          </Button>
+        </div>
+      </div>
+      {!last && <div className="h-px bg-line" />}
+    </div>
   );
 }

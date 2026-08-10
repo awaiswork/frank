@@ -86,6 +86,15 @@ export function Home() {
                   That's about <Money cents={perDay} tone="muted" className="!text-[14.5px]" /> a
                   day.
                 </span>
+              )}{' '}
+              {/* Recurring items are held back from the figure above, so say so. A
+                  hero number that drops by a month's rent with nothing to explain it
+                  is exactly the unexplained movement this app must never show. */}
+              {(safe?.upcoming_cents ?? 0) > 0 && (
+                <span className="text-muted">
+                  <Money cents={safe!.upcoming_cents} tone="muted" className="!text-[14.5px]" /> of
+                  repeating bills is already held back.
+                </span>
               )}
             </div>
             <MonthPulse elapsedPct={elapsedPct} daysInMonth={daysInMonth} monthName={monthName} />

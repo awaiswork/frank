@@ -33,7 +33,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 2b | Refunds + reconcile | M | **Done** |
 | 3 | IOUs / informal lending | S | **Done** |
 | 4a | Recurring — templates + materialisation | L | **Done** |
-| 4b | Recurring — forecast into safe-to-spend | S | Not started |
+| 4b | Recurring — forecast + skip | M | **Done** |
 | 5 | Assets + net worth trend | M | Not started |
 | 6 | Weekly digest email | M | Not started |
 | 7 | Income flows / allocation *(optional)* | S | Not started |
@@ -407,21 +407,60 @@ reflects them — but it reads as surprising the first time.
 
 ---
 
-### Phase 4b — Recurring: forecast · S
+### Phase 4b — Recurring: forecast + skip · M · **done**
 
-Not-yet-posted occurrences feed safe-to-spend.
+Upcoming recurring expenses are held back from safe-to-spend, and one occurrence can be
+skipped before it happens.
 
-**The double-count landmine.** `safe_to_spend` already subtracts
-`remaining_budgets_cents` — money reserved inside this month's budgets. If rent is also
-a recurring template, subtracting the forecast too counts rent twice and understates the
-hero number. Forecast and budgets are competing models of the same thing; pick one per
-category, never both.
+**The rule this backlog proposed was wrong, and got replaced rather than added.** It
+said a category must not carry both a budget and a recurring template, warned about at
+creation. But a Bills budget of 900 covering a fixed 800 rent *and* a variable water
+bill is entirely reasonable, and that rule forbids it — while only ever being a warning,
+so the double count stayed reachable anyway.
 
-Rule, chosen because it is explainable on screen: **budgets are for variable categories,
-recurring templates are for fixed costs, and a category should not have both.** Warn at
-template creation; test that safe-to-spend never double-subtracts a category carrying both.
+The correct answer is arithmetic, not policy: **`max(budget_remaining, upcoming)` per
+category**, never the sum.
 
-*Risk:* medium-high — touches the hero number.
+| Situation | Budget left | Still to come | Reserved | Why |
+| --- | --- | --- | --- | --- |
+| Bills budget covers the rent | 900 | 800 | **900** | the budget already accounts for it |
+| Rent, no budget | — | 800 | **800** | the rent happens anyway |
+| Budget set too low | 100 | 800 | **800** | the rent ignores the limit written down |
+
+No user-facing rule, no warning, nothing to maintain. Verified by sabotage — summing
+instead of maxing fails with `assert 170000 == 90000`, exactly the month's rent — and
+live: adding an 800 rent inside a 900 Bills budget left safe-to-spend unmoved at
+2100,00 €.
+
+**Income is never forecast.** A recurring salary and `monthly_income_cents` are the same
+statement twice; counting an upcoming salary would inflate the month by a month's pay
+for anyone who has stated both. (A recurring salary arguably ought to satisfy
+`income_known` for someone who never stated a figure — genuinely useful, touches the
+most safety-critical flag in the app, and therefore its own change.)
+
+**The figure has to explain itself.** `safe_to_spend` reports `upcoming_cents` and Home's
+existing subline gained one clause: *"800,00 € of repeating bills is already held back."*
+A hero number dropping by a month's rent with nothing to say why is the unexplained
+movement this app exists not to show. Upcoming occurrences are listed on the Repeating
+screen, not on Home — Home is already four viewport-heights and needs the removal
+conversation first.
+
+**Skip** (`recurring_skips`, migration `0012`) suppresses a date in both places: never
+materialised, never forecast. Only one of the two would be a bug in opposite directions.
+Skipping a past date is refused — by then the row either exists (delete it) or generation
+has moved past it, and a skip would change nothing while looking as though it had.
+
+*Structural note:* `safe_to_spend` is no longer one statement. The budget remainder comes
+back per category and the two-way `max` folds in Python, because occurrence dates are
+computed there. The aggregation is still set-based SQL; it is just less of a showpiece.
+
+**A latent bug from 4a, found by chasing a circular import:** `_add_months` clamped month
+ends using `aggregates.days_in_period`, which answers *"how long is the budgeting
+period"*. That equals a calendar month today and would not if periods were ever anchored
+to a payday — a monthly recurrence would then clamp to the wrong length. It uses
+`calendar` directly now, with the distinction written down.
+
+**Also fixed:** `next_on` named a date the user had just skipped.
 
 ---
 

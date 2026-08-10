@@ -11,6 +11,7 @@ report money as spent before it leaves.
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import uuid
 from collections.abc import Iterator
@@ -19,8 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import RecurringTemplate, Transaction, User
-from app.services.aggregates import days_in_period
+from app.models import RecurringSkip, RecurringTemplate, Transaction, User
 
 # A runaway guard, not a product limit. A template backdated years generates its whole
 # history on first read; this caps one pass so a single request cannot spiral, and the
@@ -35,10 +35,15 @@ def _add_months(anchor: dt.date, months: int) -> dt.date:
     31st in March — it tracks the anchor rather than drifting down to the 28th for
     ever, which is what repeatedly adding "one month" to the previous result would do.
     """
+    # `calendar`, deliberately not `aggregates.days_in_period`. That helper answers
+    # "how long is the budgeting period", which happens to equal a calendar month today
+    # and would not if periods were ever anchored to a payday. A monthly recurrence
+    # clamps to the end of a *calendar month* whatever a budgeting period turns out to
+    # be, and the two questions only look like one right now.
     total = anchor.month - 1 + months
     year = anchor.year + total // 12
     month = total % 12 + 1
-    day = min(anchor.day, days_in_period(dt.date(year, month, 1)))
+    day = min(anchor.day, calendar.monthrange(year, month)[1])
     return dt.date(year, month, day)
 
 
@@ -72,6 +77,20 @@ def occurrences(
         index += 1
 
 
+def _skips(db: Session, template_ids: list[uuid.UUID]) -> dict[uuid.UUID, set[dt.date]]:
+    """Dates the user has said will not happen, per template.
+
+    Read here rather than folded into `occurrences`, which stays pure date arithmetic —
+    a schedule and an exception to it are different things.
+    """
+    if not template_ids:
+        return {}
+    out: dict[uuid.UUID, set[dt.date]] = {}
+    for row in db.scalars(select(RecurringSkip).where(RecurringSkip.template_id.in_(template_ids))):
+        out.setdefault(row.template_id, set()).add(row.skip_on)
+    return out
+
+
 def due_templates(db: Session, user_id: uuid.UUID, today: dt.date) -> list[RecurringTemplate]:
     """Live templates that might owe a row, cheaply.
 
@@ -98,8 +117,11 @@ def materialise_due(db: Session, user: User, today: dt.date) -> int:
     ``last_materialised_on``, never from "does a row already exist" — the latter would
     resurrect a row the user deleted, on their next page load, for ever.
     """
+    templates = due_templates(db, user.id, today)
+    skipped = _skips(db, [t.id for t in templates])
+
     created = 0
-    for template in due_templates(db, user.id, today):
+    for template in templates:
         due = list(
             occurrences(
                 cadence=template.cadence,
@@ -109,7 +131,15 @@ def materialise_due(db: Session, user: User, today: dt.date) -> int:
                 after=template.last_materialised_on,
             )
         )[:MAX_PER_PASS]
+        skips = skipped.get(template.id, set())
+        # A skipped date still counts as reached: generation must move past it, or the
+        # same date would be reconsidered on every read for ever.
+        reached = due[-1] if due else None
+        due = [d for d in due if d not in skips]
         if not due:
+            if reached is not None:
+                template.last_materialised_on = reached
+                continue
             # Nothing owed, but the template has been checked as far as today: record
             # that so the next read skips it instead of re-deriving the same nothing.
             template.last_materialised_on = today
@@ -130,7 +160,7 @@ def materialise_due(db: Session, user: User, today: dt.date) -> int:
                 )
             )
             created += 1
-        template.last_materialised_on = due[-1]
+        template.last_materialised_on = reached or due[-1]
 
     if created == 0:
         db.commit()
@@ -145,3 +175,52 @@ def materialise_due(db: Session, user: User, today: dt.date) -> int:
         db.rollback()
         return 0
     return created
+
+
+def forecast(
+    db: Session,
+    user_id: uuid.UUID,
+    *,
+    today: dt.date,
+    through: dt.date,
+) -> dict[uuid.UUID | None, int]:
+    """Expense occurrences still to come, per category, in ``(today, through]``.
+
+    **Strictly after today**, because everything up to and including today has already
+    been materialised and is counted as spent — overlapping the two would charge the
+    same rent twice.
+
+    **Expenses only.** A recurring salary and ``users.monthly_income_cents`` are the
+    same statement made twice; counting an upcoming salary as income would inflate the
+    month by a month's pay for anyone who has stated both.
+    """
+    templates = list(
+        db.scalars(
+            select(RecurringTemplate).where(
+                RecurringTemplate.user_id == user_id,
+                RecurringTemplate.archived_at.is_(None),
+                RecurringTemplate.kind == "expense",
+            )
+        )
+    )
+    skipped = _skips(db, [t.id for t in templates])
+
+    out: dict[uuid.UUID | None, int] = {}
+    for template in templates:
+        skips = skipped.get(template.id, set())
+        upcoming = [
+            occurs_on
+            for occurs_on in occurrences(
+                cadence=template.cadence,
+                start_on=template.start_on,
+                end_on=template.end_on,
+                through=through,
+                after=today,
+            )
+            if occurs_on not in skips
+        ]
+        if upcoming:
+            out[template.category_id] = out.get(
+                template.category_id, 0
+            ) + template.amount_cents * len(upcoming)
+    return out

@@ -19,6 +19,7 @@ import type {
   RecurringCreate,
   Transaction,
   TransactionCreate,
+  Upcoming,
   User,
 } from './types';
 
@@ -214,6 +215,31 @@ export function useDeleteRecurring() {
     mutationFn: (id: string) => apiFetch<void>(`/recurring/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['recurring'] });
+      invalidateMoney(client);
+    },
+  });
+}
+
+export function useUpcoming() {
+  return useQuery({
+    queryKey: ['upcoming'],
+    queryFn: () => apiFetch<Upcoming[]>('/recurring/upcoming'),
+  });
+}
+
+export function useSkipOccurrence() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, on, skip }: { id: string; on: string; skip: boolean }) =>
+      skip
+        ? apiFetch<void>(`/recurring/${id}/skips`, {
+            method: 'POST',
+            body: json({ skip_on: on }),
+          })
+        : apiFetch<void>(`/recurring/${id}/skips/${on}`, { method: 'DELETE' }),
+    // Skipping changes what is reserved, so safe-to-spend moves with it.
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['upcoming'] });
       invalidateMoney(client);
     },
   });

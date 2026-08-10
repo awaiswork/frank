@@ -229,6 +229,23 @@ class RecurringOut(BaseModel):
     next_on: dt.date | None
 
 
+class UpcomingOut(BaseModel):
+    """One occurrence still to come — computed, never stored."""
+
+    template_id: uuid.UUID
+    name: str
+    kind: str
+    amount_cents: int
+    occurs_on: dt.date
+    category_id: uuid.UUID | None
+    account_id: uuid.UUID | None
+    skipped: bool
+
+
+class SkipIn(BaseModel):
+    skip_on: dt.date
+
+
 class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -361,6 +378,9 @@ class SafeToSpendOut(BaseModel):
     spent_cents: int
     remaining_budgets_cents: int
     goal_contributions_cents: int
+    # Recurring expenses still due this month — what a screen shows to explain why the
+    # figure moved, rather than leaving it to drop unexplained.
+    upcoming_cents: int
     safe_to_spend_cents: int
     # False -> we have no income to reason from; the client must not present
     # safe_to_spend_cents as a verdict (see aggregates.SafeToSpend).
