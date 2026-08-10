@@ -295,6 +295,18 @@ class NetWorthOut(BaseModel):
     complete_from: dt.date | None
 
 
+class NotificationsOut(BaseModel):
+    weekly_digest: bool
+
+
+class NotificationsUpdate(BaseModel):
+    weekly_digest: bool | None = None
+
+
+class UnsubscribeIn(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+
+
 class CategoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

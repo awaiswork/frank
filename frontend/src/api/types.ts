@@ -108,6 +108,10 @@ export interface TransactionCreate {
   category_id?: string | null;
 }
 
+export interface Notifications {
+  weekly_digest: boolean;
+}
+
 export type AssetGroup = 'physical' | 'investment';
 
 export interface Asset {

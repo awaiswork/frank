@@ -1,4 +1,6 @@
-"""The two emails this app sends, both carrying a six-digit code.
+"""The emails this app sends.
+
+Two carry a six-digit code; the third is the weekly digest.
 
 Codes rather than links, deliberately. A link has to survive a mail client
 rewriting it, works only on the device that opened the inbox, and quietly
@@ -64,14 +66,17 @@ _FOOT = f"margin:16px 0 0;font-size:13px;line-height:1.6;color:{_MUTED};"
 _SIGN = f"margin:16px 0 0;font-size:13px;font-weight:700;color:{_MUTED};"
 
 
-def _layout(heading: str, body_html: str, code: str, footer: str) -> str:
+def _layout(heading: str, body_html: str, code: str | None, footer: str) -> str:
+    # `code` is optional: the digest has no code to lead with, and an empty box would
+    # read as a message that failed to render rather than one that never had one.
+    code_html = f'<div style="{_CODE}">{escape(code)}</div>' if code else ""
     return f"""\
 <div style="{_WRAP}">
   <div style="{_CARD}">
     <div style="{_MARK}">frankly</div>
     <h1 style="{_H1}">{escape(heading)}</h1>
     <div style="{_BODY}">{body_html}</div>
-    <div style="{_CODE}">{escape(code)}</div>
+    {code_html}
     <hr style="{_RULE}">
     <p style="{_FOOT}">{escape(footer)}</p>
     <p style="{_SIGN}">— frankly</p>
@@ -142,3 +147,67 @@ want if someone else has been in here.
         footer=footer,
     )
     return EmailMessage(to="", subject=f"{code} is your Frankly reset code", text=text, html=html)
+
+
+def _money(cents: int) -> str:
+    """Comma decimal, trailing euro — the same shape the app writes on screen."""
+    sign = "\u2212" if cents < 0 else ""
+    whole, part = divmod(abs(cents), 100)
+    return f"{sign}{whole:,}".replace(",", "\u202f") + f",{part:02d}\u00a0\u20ac"
+
+
+def weekly_digest_email(
+    *,
+    spent_cents: int,
+    previous_spent_cents: int,
+    top_categories: list[tuple[str, int]],
+    upcoming_cents: int,
+    upcoming_count: int,
+    safe_to_spend_cents: int | None,
+    streak: int,
+    unsubscribe_url: str,
+) -> EmailMessage:
+    """A week in one screenful.
+
+    Every number here is one a screen already shows. Nothing is computed for the email
+    alone, because an email is the one surface nobody is looking at while it is written
+    — the easiest place in the app to assert something that turns out not to be true.
+
+    `safe_to_spend_cents` is None when there is no income on file, and the line is then
+    absent rather than zero. Same rule as the daily note: no income, no verdict.
+    """
+    delta = spent_cents - previous_spent_cents
+    if previous_spent_cents == 0 and spent_cents == 0:
+        headline = "A quiet week — nothing logged either week."
+    elif delta == 0:
+        headline = f"You spent {_money(spent_cents)}, the same as the week before."
+    else:
+        direction = "more" if delta > 0 else "less"
+        headline = (
+            f"You spent {_money(spent_cents)} last week — "
+            f"{_money(abs(delta))} {direction} than the week before."
+        )
+
+    lines = [headline]
+    if top_categories:
+        joined = ", ".join(f"{name} {_money(cents)}" for name, cents in top_categories)
+        lines.append(f"Most of it: {joined}.")
+    if upcoming_count:
+        thing = "thing" if upcoming_count == 1 else "things"
+        lines.append(f"{_money(upcoming_cents)} of repeating {thing} lands in the next seven days.")
+    if safe_to_spend_cents is not None:
+        lines.append(f"That leaves {_money(safe_to_spend_cents)} safe to spend this month.")
+    if streak >= 2:
+        lines.append(f"You've checked in {streak} days running.")
+
+    footer = (
+        "You're getting this because weekly summaries are on. "
+        "Turn them off any time — nothing else about your account changes."
+    )
+    text = "\n\n".join(["Your week"] + lines + [f"Turn these off: {unsubscribe_url}", "— frankly"])
+    body_html = "".join(f'<p style="margin:0 0 12px">{escape(line)}</p>' for line in lines) + (
+        f'<p style="margin:20px 0 0"><a href="{escape(unsubscribe_url)}" '
+        f'style="color:{_MUTED}">Turn these off</a></p>'
+    )
+    html = _layout(heading="Your week", body_html=body_html, code=None, footer=footer)
+    return EmailMessage(to="", subject="Your week with Frankly", text=text, html=html)

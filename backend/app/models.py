@@ -271,6 +271,33 @@ class Account(UUIDPk, Timestamped, Base):
     )
 
 
+class NotificationSetting(UUIDPk, Timestamped, Base):
+    """Whether a kind of message is wanted, and when it last went out.
+
+    `last_sent_at` is what makes a double send impossible. The sender claims a week by
+    updating this column with a predicate and acting only on the rows the update
+    returned, so two overlapping cron runs cannot both pick up the same person. If
+    delivery then fails the claim stands and they miss a week — worse than a perfect
+    send, and much better than being emailed the same digest twice.
+    """
+
+    __tablename__ = "notification_settings"
+
+    WEEKLY_DIGEST = "weekly_digest"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    last_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('weekly_digest')", name="ck_notification_kind"),
+        UniqueConstraint("user_id", "kind", name="uq_notification_user_kind"),
+    )
+
+
 class Asset(UUIDPk, Timestamped, Base):
     """Something owned that has no ledger — a car, a flat, a fund held elsewhere.
 

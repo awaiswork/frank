@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     # whose order is incidental (Vercel previews), and a link is not something to
     # build out of a list by luck. Falls back to the first origin when unset.
     public_app_url: str = ""
+    # Shared secret for the scheduled digest endpoint. Empty means that endpoint
+    # refuses every request — deliberately the opposite of how email degrades to the
+    # console sender. An unauthenticated route that mails every user is not a graceful
+    # fallback, so it fails closed rather than open.
+    cron_secret: str = ""
     # "lax" when the app and API share a registrable domain (askfrankly.app +
     # api.askfrankly.app). Cross-site hosts (*.vercel.app → *.onrender.com) need
     # "none", or the browser drops the refresh cookie and every reload signs the
