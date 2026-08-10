@@ -61,6 +61,21 @@ _CODE = (
     f"border:1px solid {_LINE};border-radius:12px;font-family:{_MONO};"
     f"font-size:30px;font-weight:700;letter-spacing:0.28em;color:{_INK};"
 )
+# The lead line carries the week's one number, so it gets the weight the supporting
+# lines don't — the same order of reading the app uses everywhere else.
+_LEAD = (
+    f"margin:0 0 12px;font-size:17px;line-height:1.45;font-weight:600;"
+    f"color:{_INK};letter-spacing:-0.01em;"
+)
+# Solid ink on paper, because docs/design/design-system.md says there is no
+# brand-color button and the primary one is exactly this. Padding puts it at ~46px
+# tall, inside the 44–50 the same doc asks for. `display:inline-block` is what makes
+# the padding apply at all in the clients that strip nothing else.
+_BUTTON = (
+    f"display:inline-block;padding:14px 22px;background:{_INK};color:{_PAPER};"
+    f"text-decoration:none;border-radius:12px;font-size:15px;font-weight:600;"
+    f"letter-spacing:-0.01em;"
+)
 _RULE = f"border:none;border-top:1px solid {_LINE};margin:24px 0 0;"
 _FOOT = f"margin:16px 0 0;font-size:13px;line-height:1.6;color:{_MUTED};"
 _SIGN = f"margin:16px 0 0;font-size:13px;font-weight:700;color:{_MUTED};"
@@ -165,6 +180,7 @@ def weekly_digest_email(
     upcoming_count: int,
     safe_to_spend_cents: int | None,
     streak: int,
+    app_url: str,
     unsubscribe_url: str,
 ) -> EmailMessage:
     """A week in one screenful.
@@ -175,6 +191,11 @@ def weekly_digest_email(
 
     `safe_to_spend_cents` is None when there is no income on file, and the line is then
     absent rather than zero. Same rule as the daily note: no income, no verdict.
+
+    `app_url` is where the button goes, and it comes from configuration rather than
+    from anything a request said — see `Settings.app_base_url`. A summary is only worth
+    reading if you can act on it, and the app root is the honest destination: there is
+    no weekly screen to deep-link to, and Home is the glance this is a copy of.
     """
     delta = spent_cents - previous_spent_cents
     if previous_spent_cents == 0 and spent_cents == 0:
@@ -204,9 +225,24 @@ def weekly_digest_email(
         "You're getting this because weekly summaries are on. "
         "Turn them off any time — nothing else about your account changes."
     )
-    text = "\n\n".join(["Your week"] + lines + [f"Turn these off: {unsubscribe_url}", "— frankly"])
-    body_html = "".join(f'<p style="margin:0 0 12px">{escape(line)}</p>' for line in lines) + (
-        f'<p style="margin:20px 0 0"><a href="{escape(unsubscribe_url)}" '
+    # The URL goes in the plain part too. A button is invisible to a text-first client
+    # and to a screen reader, and "open the app" with no way to open it is not a link.
+    text = "\n\n".join(
+        ["Your week"]
+        + lines
+        + [
+            f"Open Frankly: {app_url}",
+            f"Turn these off: {unsubscribe_url}",
+            "— frankly",
+        ]
+    )
+    head, *rest = lines
+    body_html = (
+        f'<p style="{_LEAD}">{escape(head)}</p>'
+        + "".join(f'<p style="margin:0 0 12px">{escape(line)}</p>' for line in rest)
+        + f'<p style="margin:24px 0 0"><a href="{escape(app_url)}" '
+        f'style="{_BUTTON}">Open Frankly</a></p>'
+        + f'<p style="margin:16px 0 0"><a href="{escape(unsubscribe_url)}" '
         f'style="color:{_MUTED}">Turn these off</a></p>'
     )
     html = _layout(heading="Your week", body_html=body_html, code=None, footer=footer)

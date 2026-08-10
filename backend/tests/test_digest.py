@@ -347,6 +347,7 @@ def test_the_email_omits_the_line_it_cannot_support(db: Session) -> None:
         upcoming_cents=0,
         upcoming_count=0,
         streak=0,
+        app_url="https://example.test",
         unsubscribe_url="https://example.test/unsubscribe?token=x",
     )
     without = weekly_digest_email(**common, safe_to_spend_cents=None)  # type: ignore[arg-type]
@@ -359,6 +360,53 @@ def test_the_email_omits_the_line_it_cannot_support(db: Session) -> None:
     for message in (without, with_it):
         assert "unsubscribe?token=x" in message.text
         assert "unsubscribe?token=x" in message.html
+
+
+def test_the_email_offers_a_way_back_into_the_app(db: Session) -> None:
+    """A summary you cannot act on is a dead end.
+
+    Asserted in both parts for the same reason the unsubscribe link is: a button only
+    exists in the HTML, and some clients render only the plain alternative.
+    """
+    from app.email.templates import weekly_digest_email
+
+    message = weekly_digest_email(
+        spent_cents=40_00,
+        previous_spent_cents=25_00,
+        top_categories=[],
+        upcoming_cents=0,
+        upcoming_count=0,
+        safe_to_spend_cents=None,
+        streak=0,
+        app_url="https://app.example.test",
+        unsubscribe_url="https://app.example.test/unsubscribe?token=x",
+    )
+
+    # Labelled, not bare. The unsubscribe URL starts with the app URL, so asserting the
+    # host alone passes even when the button link is gone entirely — which is exactly
+    # what happened the first time this test was written.
+    assert "Open Frankly: https://app.example.test\n" in message.text
+    # The closing quote is what separates this from the unsubscribe href below it.
+    assert 'href="https://app.example.test"' in message.html
+    # The two links are distinct destinations; a button that quietly unsubscribed the
+    # reader would be the worst possible misfire on this surface.
+    assert message.html.index('href="https://app.example.test"') < message.html.index(
+        "unsubscribe?token="
+    )
+
+
+def test_the_app_link_is_never_taken_from_a_request() -> None:
+    """The host comes from configuration, which is what keeps this off the open-redirect
+    list. `app_base_url` refuses anything outside the configured origins, so a stray
+    `PUBLIC_APP_URL` cannot turn every digest into a link to somewhere else.
+    """
+    from app.config import Settings
+
+    spoofed = Settings(
+        frontend_origin="https://app.example.test",
+        public_app_url="https://evil.example",
+    )
+    assert spoofed.app_base_url == "https://app.example.test"
 
 
 # --- unsubscribing without a session -----------------------------------------
