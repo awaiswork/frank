@@ -9,6 +9,8 @@ const tx = (kind: TransactionKind, amount_cents: number): Transaction => ({
   counter_account_id: kind === 'transfer' ? 'a2' : null,
   recurring_template_id: null,
   amount_cents,
+  currency: 'EUR',
+  base_amount_cents: amount_cents,
   description: 'x',
   merchant: null,
   occurred_on: '2026-08-10',
@@ -47,6 +49,13 @@ describe('dayNet', () => {
     expect(dayNet([...spending, tx('adjustment_up', 5_00), tx('adjustment_down', 9_00)])).toBe(
       dayNet(spending),
     );
+  });
+
+  it('counts what left your account, not the price on the tag', () => {
+    // $45 that cost €41.20. Summing the foreign figure would put dollars into a euro
+    // total — the client-side twin of the sweep every server aggregate went through.
+    const foreign = { ...tx('expense', 45_00), currency: 'USD', base_amount_cents: 41_20 };
+    expect(dayNet([foreign])).toBe(-41_20);
   });
 
   it('is zero for an empty day', () => {

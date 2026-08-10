@@ -38,7 +38,7 @@ for review → approve → implement → diff → review → tests → stop.
 | 6 | Weekly digest email | L | **Done** |
 | 7 | Income flows / allocation *(optional)* | S | Not started |
 | 8a | Multi-currency groundwork (invisible) | M | **Done** |
-| 8b | Foreign entry, rates, and the UI | L | Not started |
+| 8b | Foreign entry, rates, and the UI | L | **Done** |
 
 ---
 
@@ -626,31 +626,59 @@ fields copied nine times. No assertion changed — verified by diffing for alter
 
 ### Phase 8b — Foreign entry, rates, and the UI · L
 
-An `fx_rates` table fed daily from Frankfurter/ECB via the existing hourly cron, with
-graceful fallback to the last known rate; manual per-transaction rate override, because a
-bank's real rate never matches mid-market.
+You can log what you paid abroad, and what it actually cost you. The columns and the rule
+they protect landed in 8a; this fills them from something other than "one".
 
-The columns and the rule they protect landed in 8a; what is left is filling them from
-something other than "one".
+**Checked the provider before designing around it, and two things had moved.**
+`api.frankfurter.app` now answers **301** to `api.frankfurter.dev/v1/` — and `httpx` does
+not follow redirects by default, so the documented URL would have failed silently. One
+request returns all 29 quotes against a base, so a refresh is one call per reporting
+currency rather than one per pair.
 
-- **Rates on a schedule, not at write time.** Frankfurter needs no API key and `httpx` is
-  already a direct dependency, so **no new dependency and no new env var**. An HTTP call
-  on the transaction write path would add latency and a failure mode to the one thing
-  that must always work.
-- **Manual override is the better input, not a fallback.** A statement shows both numbers
-  — $45 and €41.20 — so entering both is more accurate than any mid-market rate, and
-  `fx_rate` is then derived from what actually happened.
-- **Formatting decision already taken:** foreign amounts render as `45,00 USD` — the
-  app's own numeric convention with an ISO code rather than a symbol. Unambiguous, no
-  per-currency symbol/position/separator rules, obviously not your own money at a glance,
-  and it leaves the design system alone. `Intl.NumberFormat` would be more correct in
-  isolation and would change how every existing euro amount looks.
-- The frontend sweep is the bulk of it: `formatMoney` hardcodes `€`, with 25 more literal
-  `€` across nine files plus the CSV header. `TransactionOut` does not expose the new
-  columns yet — 8b adds them with the display that needs them.
+**Direction is the failure this was designed against.** An inverted rate produces a number
+that looks exactly like money and is wrong by about a third — no total flags it, no
+constraint catches it. So there is one convention everywhere (base per quote,
+`base_amount = amount × rate`), Frankfurter's inverse is flipped once at the edge, and the
+tests assert it as a *fact about the world* — a dollar is worth less than a euro, a pound
+more — rather than as arithmetic that would pass upside down. Verified live against real
+ECB data: `1 USD = 0.86693 EUR`, matching the API exactly.
 
-*Why last:* it is the deepest change, and nothing in Phases 0–7 forces a decision that
-makes it painful — provided doors 2 and 8 hold. They did.
+**The ECB publishes on working days.** Ask Frankfurter for a Saturday and it answers with
+Friday's date and rate, so the response's own `date` is what gets stored. Lookups take the
+most recent rate at or before a day, which handles weekends, holidays and "not fetched
+yet" identically — and matches what a bank would have used.
+
+**With no rate and no stated amount, the API refuses.** A date from before rates were
+collected has no honest conversion, and a guess would enter every total reading it looking
+exactly like a real figure.
+
+**A supplied amount always wins.** A statement showing $60 charged as €53.10 is better
+evidence than any mid-market rate — that is what the money did — so `fx_rate` is derived
+from it rather than the other way round. Both paths driven live: $45 converted at the
+published rate to €39.01, $60 recorded at the stated €53.10, reports summing to €92.11
+and the balance down by the same.
+
+**No `ENV = prod` guard on `/internal/fx/refresh`, deliberately.** The digest has one
+because that route *contacts people*; this writes rates to a table, which is harmless and
+useful to run locally. Guarding everything named `/internal` by reflex would make the
+digest's guard read as ceremony rather than as a fix for something that went wrong.
+
+**The client had the same sweep to make**, and it was nearly missed: `lib/net.ts` summed
+`amount_cents`, which would have put dollars into a euro day-total. Now on
+`base_amount_cents`, with a test confirmed to fail otherwise.
+
+**Caught on screen, not in tests:** the transaction row put the foreign amount last, so at
+320px it truncated away behind "Uncategorised" — hiding the one thing that made the row
+worth a second look. The foreign amount leads now.
+
+*Schema:* migration `0016` — `fx_rates`, one row per pair per published day. **No new
+dependency and no new env var**: `httpx` is already direct, Frankfurter needs no key.
+
+**Left deliberately — worth its own slot:** `formatMoney` still hardcodes `€` for the
+reporting currency. Someone whose base is not EUR already sees the wrong symbol today;
+that is independent of this phase, and fixing it means threading the user's currency
+through ~26 call sites across nine files. Half-doing it here would have made this diff
+mostly unrelated churn.
 
 ---
 

@@ -13,7 +13,7 @@ from app.deps import CurrentUser, DbSession, LedgerUpToDate, Today
 from app.models import Account, Category, Transaction
 from app.schemas import TransactionCreate, TransactionOut, TransactionUpdate
 from app.services.aggregates import month_bounds, parse_month
-from app.services.money import in_base
+from app.services.money import NoRate, in_base
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -122,7 +122,23 @@ def create_transaction(body: TransactionCreate, user: CurrentUser, db: DbSession
     _require_owned_account(db, user.id, body.account_id)
     _require_owned_account(db, user.id, body.counter_account_id)
     _require_transfer_shape(body.kind, body.account_id, body.counter_account_id, body.category_id)
-    currency, base_cents, rate = in_base(user, body.amount_cents)
+    try:
+        currency, base_cents, rate = in_base(
+            user,
+            body.amount_cents,
+            currency=body.currency,
+            base_amount_cents=body.base_amount_cents,
+            db=db,
+            on=body.occurred_on,
+        )
+    except NoRate as exc:
+        # Asking rather than guessing. A made-up conversion would enter every total
+        # that reads it looking exactly like a real one.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"No {exc.args[0]} rate for {body.occurred_on}. "
+            "Enter what it came to in your own currency.",
+        ) from exc
     tx = Transaction(
         user_id=user.id,
         currency=currency,

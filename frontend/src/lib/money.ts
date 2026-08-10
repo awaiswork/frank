@@ -59,3 +59,16 @@ export function parseAmountToCents(input: string): number | null {
   if (!Number.isFinite(value) || value <= 0) return null;
   return Math.round(value * 100);
 }
+
+/**
+ * An amount in a currency that is not yours — `45,00 USD`.
+ *
+ * An ISO code rather than a symbol, deliberately. Symbols carry conventions the app
+ * would then have to know per currency: `$` leads, `€` trails, some use a full stop
+ * where this app uses a comma. A code sidesteps all of it, is unambiguous between the
+ * several dollars, and reads at a glance as *not your money* — which is the actual job
+ * here, since the figure beside it is what you were really charged.
+ */
+export function formatForeign(cents: number, currency: string): string {
+  return `${formatMoney(cents, { symbol: false })}\u00a0${currency.toUpperCase()}`;
+}

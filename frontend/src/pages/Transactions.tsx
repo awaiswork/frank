@@ -8,7 +8,7 @@ import { Money } from '../components/Money';
 import { Card } from '../components/ui';
 import { currentMonth, monthLabel, shiftMonth } from '../lib/date';
 import { dayNet } from '../lib/net';
-import { formatMoney } from '../lib/money';
+import { formatForeign, formatMoney } from '../lib/money';
 
 function dayHeading(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
@@ -203,6 +203,13 @@ function Row({
   // deleted out from under it.
   const from = accountNames.get(tx.account_id ?? '');
   const to = accountNames.get(tx.counter_account_id ?? '');
+  // Shown under the row rather than instead of the figure: what reached the reports is
+  // what left your account, and the foreign amount is the receipt for it.
+  const foreign =
+    tx.currency && tx.base_amount_cents !== tx.amount_cents
+      ? formatForeign(tx.amount_cents, tx.currency)
+      : null;
+
   const subtitle = transfer
     ? from && to
       ? `${from} → ${to}`
@@ -233,8 +240,16 @@ function Row({
         {/* Two account names and an arrow outrun a 320px row, and this line has the
             least space in it. Same answer as the merchant name above: truncate, but
             keep the whole thing reachable. */}
-        <div className="truncate text-[12.5px] text-muted" title={transfer ? subtitle : undefined}>
-          {subtitle}
+        {/* The foreign amount leads. On a 320px row this line truncates, and what
+            gets cut is whatever comes last — so putting "Uncategorised" first hid the
+            one thing that made the row worth a second look. A category is guessable
+            from the name; what you actually paid is not. */}
+        <div
+          className="truncate text-[12.5px] text-muted"
+          title={foreign ? `${foreign} · ${subtitle}` : transfer ? subtitle : undefined}
+        >
+          {foreign && <span className="text-ink-2">{foreign}</span>}
+          {foreign && category ? ` · ${category.name}` : foreign ? '' : subtitle}
         </div>
       </div>
       {/* You refund *a purchase*, so this opens on that purchase's amount, category
@@ -278,8 +293,8 @@ function Row({
           transfer || correction
             ? tx.amount_cents
             : income || refund
-              ? tx.amount_cents
-              : -tx.amount_cents
+              ? tx.base_amount_cents
+              : -tx.base_amount_cents
         }
         signed={income || refund}
         // A refund is money coming back, so it reads like income. A transfer or a

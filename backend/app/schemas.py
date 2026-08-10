@@ -319,6 +319,11 @@ class CategoryOut(BaseModel):
 class TransactionCreate(BaseModel):
     kind: TransactionKind = "expense"
     account_id: uuid.UUID | None = None
+    # What it was in, if not your own money. The published rate for the day is used
+    # unless `base_amount_cents` says what actually left the account — which a bank
+    # statement does, and which is better evidence than any mid-market rate.
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    base_amount_cents: int | None = Field(default=None, gt=0)
     # Required for a transfer and rejected otherwise — see `_require_transfer_shape`
     # in the router, and ck_transactions_transfer_shape behind it.
     counter_account_id: uuid.UUID | None = None
@@ -347,6 +352,10 @@ class TransactionOut(BaseModel):
     kind: str
     account_id: uuid.UUID | None
     counter_account_id: uuid.UUID | None
+    # What it was in, and what it came to. Equal, with a rate of 1, whenever the two
+    # are the same currency.
+    currency: str
+    base_amount_cents: int
     # Set when a recurring template generated this row; null once the template is gone.
     recurring_template_id: uuid.UUID | None
     amount_cents: int

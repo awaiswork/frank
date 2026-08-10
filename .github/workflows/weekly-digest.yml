@@ -35,6 +35,22 @@ jobs:
   send:
     runs-on: ubuntu-latest
     steps:
+      # Rates first: a digest is allowed to reference a foreign amount, and a
+      # transaction logged this morning wants today's rate rather than yesterday's.
+      # Failing here must not stop the digest, so it does not use `-f`.
+      - name: Refresh exchange rates
+        env:
+          API_URL: ${{ vars.API_URL }}
+          CRON_SECRET: ${{ secrets.DIGEST_CRON_SECRET }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Not configured — nothing to do."
+            exit 0
+          fi
+          curl -sS --max-time 120 -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$API_URL/internal/fx/refresh" || echo "Rate refresh failed; yesterday's rates stand."
+
       - name: Ask the API to send what is due
         env:
           API_URL: ${{ vars.API_URL }}
