@@ -17,6 +17,7 @@ from app.services.aggregates import (
     daily_burn_rate,
     days_in_period,
     month_over_month_by_category,
+    previous_period,
     safe_to_spend,
     spend_by_category,
 )
@@ -190,7 +191,7 @@ def test_daily_burn_rate_trailing_30(db: Session) -> None:
     assert burn.daily_burn_cents == 190_00 // 30
 
 
-def test_month_over_month_lag(db: Session) -> None:
+def test_month_over_month(db: Session) -> None:
     user, groceries, transport = _seed(db)
     rows = {r.category_id: r for r in month_over_month_by_category(db, user.id, JUNE)}
     assert rows[groceries.id].this_month_cents == 150_00
@@ -198,3 +199,49 @@ def test_month_over_month_lag(db: Session) -> None:
     assert rows[groceries.id].delta_cents == 30_00
     assert rows[transport.id].prev_month_cents == 0
     assert rows[transport.id].delta_cents == 40_00
+
+
+def test_a_gap_month_compares_against_the_gap_not_the_last_time_you_spent(
+    db: Session,
+) -> None:
+    """The bug a window function hid.
+
+    ``LAG`` orders over the rows that exist, so with nothing in May, June's "previous
+    month" silently became April — two months back, labelled as last month. Skipping a
+    category for a month is ordinary, and the delta was quietly comparing the wrong
+    thing whenever it happened.
+    """
+    user = _user(db, income=300_00)
+    groceries = _cat(db, user, "Groceries")
+    _tx(db, user, groceries, 200_00, dt.date(2026, 4, 10))
+    # nothing at all in May
+    _tx(db, user, groceries, 50_00, dt.date(2026, 6, 10))
+
+    [row] = month_over_month_by_category(db, user.id, JUNE)
+    assert row.this_month_cents == 50_00
+    assert row.prev_month_cents == 0, "compared against April instead of May"
+    assert row.delta_cents == 50_00
+
+
+def test_stopping_entirely_shows_a_fall_rather_than_disappearing(db: Session) -> None:
+    """The other half: the change most worth seeing was the one that vanished.
+
+    Rows were filtered to the target month, so a category you spent on last month and
+    not at all this month left the comparison altogether — the app quietly dropping
+    "you stopped buying this" instead of reporting it.
+    """
+    user = _user(db, income=300_00)
+    fun = _cat(db, user, "Fun")
+    _tx(db, user, fun, 80_00, dt.date(2026, 5, 12))
+
+    rows = {r.category_name: r for r in month_over_month_by_category(db, user.id, JUNE)}
+    assert "Fun" in rows, "a category dropped to zero disappeared instead of showing it"
+    assert rows["Fun"].this_month_cents == 0
+    assert rows["Fun"].prev_month_cents == 80_00
+    assert rows["Fun"].delta_cents == -80_00
+
+
+def test_previous_period_steps_back_one_month() -> None:
+    assert previous_period(dt.date(2026, 6, 1)) == dt.date(2026, 5, 1)
+    assert previous_period(dt.date(2026, 1, 1)) == dt.date(2025, 12, 1)
+    assert previous_period(dt.date(2026, 3, 1)) == dt.date(2026, 2, 1)

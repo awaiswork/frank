@@ -87,6 +87,15 @@ def parse_month(month: str | None, *, today: dt.date) -> dt.date:
     return dt.date(year, mon, 1)
 
 
+def previous_period(month_start: dt.date) -> dt.date:
+    """The period immediately before the one beginning at ``month_start``.
+
+    Derived by asking which period contains the day before, rather than subtracting a
+    month, so it stays correct for whatever a period is defined to be.
+    """
+    return parse_month(None, today=month_start - dt.timedelta(days=1))
+
+
 def days_in_period(month_start: dt.date) -> int:
     """How many days the period beginning at ``month_start`` runs for.
 
@@ -449,56 +458,45 @@ class CategoryMoM:
 def month_over_month_by_category(
     db: Session, user_id: uuid.UUID, month_start: dt.date
 ) -> list[CategoryMoM]:
-    """Per-category change vs. the previous month, via a ``LAG()`` window function.
+    """Per-category change against the *previous calendar month*.
 
-    Monthly sums are computed per category, then ``LAG`` pulls each row's previous
-    month into the same row so we can return the delta the Insights screen plots.
+    This used a ``LAG()`` window function, which technical-plan.md §6.4 lists as one of
+    the showcase queries. It was wrong twice, and both faults were invisible on screen:
+
+    * ``LAG`` orders over the rows that *exist*, so "previous month" meant "the previous
+      month this category had any spending in". Skip a month and the delta compared
+      against something two or three months back while being labelled as last month.
+    * Filtering to rows in the target month dropped every category that had spending
+      last month and none this month — which is exactly the change worth seeing. Stop
+      buying something entirely and it vanished rather than showing a fall to zero.
+
+    Two straightforward reads over the union of both months fix both, and are far easier
+    to check than a window over a densified series. Correctness over showmanship — the
+    note is here so the swap reads as a decision rather than an oversight.
     """
-    month_expr = func.date_trunc("month", Transaction.occurred_on)
-    monthly = (
-        select(
-            Transaction.category_id.label("category_id"),
-            month_expr.label("month"),
-            _spent().label("spent"),
-        )
-        .where(Transaction.user_id == user_id, _is_spend())
-        .group_by(Transaction.category_id, month_expr)
-        .subquery()
-    )
-    windowed = select(
-        monthly.c.category_id,
-        monthly.c.month,
-        monthly.c.spent,
-        func.lag(monthly.c.spent)
-        .over(partition_by=monthly.c.category_id, order_by=monthly.c.month)
-        .label("prev_spent"),
-    ).subquery()
+    this_month = {row.category_id: row for row in spend_by_category(db, user_id, month_start)}
+    last_month = {
+        row.category_id: row for row in spend_by_category(db, user_id, previous_period(month_start))
+    }
 
-    target = dt.datetime(month_start.year, month_start.month, 1)
-    stmt = (
-        select(
-            windowed.c.category_id,
-            Category.name,
-            Category.color,
-            windowed.c.spent,
-            func.coalesce(windowed.c.prev_spent, 0).label("prev_spent"),
-        )
-        .join(Category, Category.id == windowed.c.category_id, isouter=True)
-        .where(windowed.c.month == target)
-        .order_by(Category.name)
-    )
     out: list[CategoryMoM] = []
-    for row in db.execute(stmt):
-        this_cents = int(row.spent)
-        prev_cents = int(row.prev_spent)
+    for category_id in this_month.keys() | last_month.keys():
+        current = this_month.get(category_id)
+        previous = last_month.get(category_id)
+        # Present in at least one of the two, and that one carries the name and colour.
+        named = current or previous
+        if named is None:  # pragma: no cover — the key came from one of the two maps
+            continue
+        this_cents = current.spent_cents if current else 0
+        prev_cents = previous.spent_cents if previous else 0
         out.append(
             CategoryMoM(
-                category_id=row.category_id,
-                category_name=row.name,
-                color=row.color,
+                category_id=category_id,
+                category_name=named.category_name,
+                color=named.color,
                 this_month_cents=this_cents,
                 prev_month_cents=prev_cents,
                 delta_cents=this_cents - prev_cents,
             )
         )
-    return out
+    return sorted(out, key=lambda row: (row.category_name or "", str(row.category_id or "")))

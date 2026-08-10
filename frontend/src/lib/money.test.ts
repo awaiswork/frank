@@ -40,3 +40,27 @@ describe('parseAmountToCents', () => {
     expect(parseAmountToCents('abc')).toBeNull();
   });
 });
+
+describe('formatMoney symbol option', () => {
+  it('omits the euro sign when asked', () => {
+    expect(formatMoney(400_00, { symbol: false })).toBe(
+      formatMoney(400_00).replace(/\u00a0\u20ac$/, ''),
+    );
+    expect(formatMoney(400_00, { symbol: false })).not.toContain('\u20ac');
+  });
+
+  it('is what a caller stripping " €" by hand was reaching for', () => {
+    // The three call sites in Budgets used `.replace(' €', '')` with an ordinary
+    // space. The € is preceded by U+00A0, so every one of them was a no-op — this
+    // pins the difference so the shortcut cannot come back unnoticed.
+    const withSymbol = formatMoney(400_00);
+    expect(withSymbol.replace(' \u20ac', '')).toBe(withSymbol);
+    expect(formatMoney(400_00, { symbol: false })).not.toBe(withSymbol);
+  });
+
+  it('keeps the sign and the grouping either way', () => {
+    expect(formatMoney(-1_234_56, { signed: true, symbol: false })).toBe(
+      formatMoney(-1_234_56, { signed: true }).replace(/\u00a0\u20ac$/, ''),
+    );
+  });
+});
