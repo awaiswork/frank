@@ -47,7 +47,7 @@ export function Settings() {
 
       <Block label="Email">
         <Card>
-          <DigestRow />
+          <DigestRow timezone={user?.timezone ?? null} />
         </Card>
       </Block>
 
@@ -405,24 +405,77 @@ function toCsv(rows: Transaction[], names: Map<string, string>): string {
   return [head.join(','), ...lines].join('\n');
 }
 
-function DigestRow() {
+// Monday first, because 0 is Monday on the server — `date.weekday()`, not a
+// Sunday-first calendar convention. The index into this array *is* the stored value,
+// so reordering it silently moves everyone's digest.
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function hourLabel(hour: number) {
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
+function DigestRow({ timezone }: { timezone: string | null }) {
   const prefs = useNotifications();
   const update = useUpdateNotifications();
   const on = prefs.data?.weekly_digest ?? true;
+  const weekday = prefs.data?.send_weekday ?? 0;
+  const hour = prefs.data?.send_hour ?? 8;
+  const busy = prefs.isPending || update.isPending;
 
   return (
-    <Row
-      label="Weekly summary"
-      hint="Monday mornings, in your time zone. Sign-in codes always come regardless."
-    >
-      <Button
-        variant="secondary"
-        disabled={prefs.isPending || update.isPending}
-        onClick={() => update.mutate({ weekly_digest: !on })}
-        aria-pressed={on}
+    <div className="flex flex-col gap-2.5">
+      <Row
+        label="Weekly summary"
+        hint={
+          on
+            ? // Named rather than implied. Without a zone the server falls back to UTC,
+              // and "08:00" meaning something four hours off is exactly the sort of
+              // quiet wrongness worth one extra clause to avoid.
+              `${DAYS[weekday]} at ${hourLabel(hour)}, ${
+                timezone ? `in ${timezone}` : 'UTC — set a time zone above to use your own'
+              }. Sign-in codes always come regardless.`
+            : 'Off. Sign-in codes always come regardless.'
+        }
       >
-        {update.isPending ? 'Saving…' : on ? 'On' : 'Off'}
-      </Button>
-    </Row>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() => update.mutate({ weekly_digest: !on })}
+          aria-pressed={on}
+        >
+          {update.isPending ? 'Saving…' : on ? 'On' : 'Off'}
+        </Button>
+      </Row>
+      {on && (
+        <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            value={weekday}
+            disabled={busy}
+            onChange={(e) => update.mutate({ send_weekday: Number(e.target.value) })}
+            aria-label="Day the weekly summary arrives"
+            className="h-11 min-w-0 flex-1 rounded-input border border-line-2 bg-field px-3 text-[16px] text-ink"
+          >
+            {DAYS.map((day, index) => (
+              <option key={day} value={index}>
+                {day}
+              </option>
+            ))}
+          </select>
+          <select
+            value={hour}
+            disabled={busy}
+            onChange={(e) => update.mutate({ send_hour: Number(e.target.value) })}
+            aria-label="Hour the weekly summary arrives"
+            className="h-11 min-w-0 flex-1 rounded-input border border-line-2 bg-field px-3 text-[16px] text-ink"
+          >
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {hourLabel(h)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
   );
 }
