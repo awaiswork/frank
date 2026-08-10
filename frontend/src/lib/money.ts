@@ -12,14 +12,27 @@ const THIN_SPACE = String.fromCharCode(0x202f);
 const NBSP = String.fromCharCode(0x00a0);
 const MINUS = String.fromCharCode(0x2212);
 
-export function formatMoney(cents: number, { signed = false }: { signed?: boolean } = {}): string {
+/**
+ * `symbol: false` drops the trailing €, for the left-hand half of a pair like
+ * "300,00 / 400,00 €" where repeating it reads as two separate amounts.
+ *
+ * It is an option rather than something callers strip afterwards because they were
+ * stripping it *wrong*: three places in Budgets called `.replace(' €', '')` with an
+ * ordinary space, and the € here is preceded by U+00A0. Every one of those was a
+ * silent no-op — the symbol rendered anyway and nobody noticed, because the output
+ * looks identical either way in an editor.
+ */
+export function formatMoney(
+  cents: number,
+  { signed = false, symbol = true }: { signed?: boolean; symbol?: boolean } = {},
+): string {
   const negative = cents < 0;
   const abs = Math.abs(Math.round(cents));
   const whole = Math.floor(abs / 100).toString();
   const frac = (abs % 100).toString().padStart(2, '0');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, THIN_SPACE);
   const sign = negative ? MINUS : signed ? '+' : '';
-  return `${sign}${grouped},${frac}${NBSP}€`;
+  return `${sign}${grouped},${frac}` + (symbol ? `${NBSP}\u20ac` : '');
 }
 
 /** Split into euros (thin-space grouped) and cents for the big hero figure. */

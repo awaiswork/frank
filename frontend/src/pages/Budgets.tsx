@@ -46,7 +46,7 @@ export function Budgets() {
             is now allowed to break between them. */}
         <div className="min-w-0 text-right">
           <div className="num text-[20px] font-semibold">
-            {formatMoney(totalSpent).replace(' €', '')}{' '}
+            {formatMoney(totalSpent, { symbol: false })}{' '}
             <span className="text-[15px] text-muted">/ {formatMoney(totalLimit)}</span>
           </div>
           <div className="text-[12.5px] text-muted">spent of budgeted · {daysLeft} days left</div>
@@ -141,7 +141,7 @@ function BudgetRow({
           <div className="flex items-center gap-2">
             {budget && (
               <span className="num text-[14px] whitespace-nowrap text-muted">
-                {formatMoney(budget.spent_cents).replace(' €', '')} /
+                {formatMoney(budget.spent_cents, { symbol: false })} /
               </span>
             )}
             <TextInput
@@ -178,7 +178,7 @@ function BudgetRow({
             onClick={() => setEditing(true)}
             className="num border-b border-dashed border-line-2 pb-px text-[14px] font-semibold whitespace-nowrap text-muted hover:text-ink"
           >
-            {formatMoney(budget.spent_cents).replace(' €', '')} / {formatMoney(budget.limit_cents)}
+            {formatMoney(budget.spent_cents, { symbol: false })} / {formatMoney(budget.limit_cents)}
           </button>
         )}
       </div>
