@@ -71,6 +71,12 @@ class TicketOut(BaseModel):
     ticket: str
 
 
+class HandoffIn(BaseModel):
+    """The secret Google's callback handed the browser, exchanged for a session."""
+
+    handoff: str = Field(min_length=1, max_length=512)
+
+
 class MessageOut(BaseModel):
     """The deliberately incurious response.
 

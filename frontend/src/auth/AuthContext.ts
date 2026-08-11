@@ -28,6 +28,12 @@ export interface AuthContextValue {
   register: (email: string, password: string) => Promise<AuthMessage>;
   /** Redeem a signup code. This is where an email account's session begins. */
   verify: (email: string, code: string) => Promise<void>;
+  /**
+   * Finish a Google sign-in from the handoff its callback left in the URL. The
+   * only route into a session that does not depend on the refresh cookie, which
+   * is why Google sign-in used to fail on every phone — see `lib/handoff`.
+   */
+  completeOAuth: (handoff: string) => Promise<void>;
   logout: () => void;
   logoutEverywhere: () => Promise<void>;
   setUser: (user: User) => void;
