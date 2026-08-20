@@ -303,10 +303,18 @@ class NetWorthOut(BaseModel):
 
 class NotificationsOut(BaseModel):
     weekly_digest: bool
+    #: Monday is 0, matching `date.weekday()` and the CHECK on the column.
+    send_weekday: int
+    send_hour: int
 
 
 class NotificationsUpdate(BaseModel):
     weekly_digest: bool | None = None
+    # Bounded here as well as in the database. The constraint is what makes a bad value
+    # impossible; this is what makes it a 422 with a readable message instead of a 500
+    # from a violated CHECK.
+    send_weekday: int | None = Field(default=None, ge=0, le=6)
+    send_hour: int | None = Field(default=None, ge=0, le=23)
 
 
 class UnsubscribeIn(BaseModel):

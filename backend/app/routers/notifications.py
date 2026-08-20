@@ -49,26 +49,59 @@ def _setting(db: DbSession, user: User) -> NotificationSetting | None:
     )
 
 
+def _out(setting: NotificationSetting | None) -> NotificationsOut:
+    """One place that says what "no row" means, so GET and PATCH cannot disagree."""
+    if setting is None:
+        return NotificationsOut(
+            weekly_digest=True,
+            send_weekday=digest.DEFAULT_WEEKDAY,
+            send_hour=digest.DEFAULT_HOUR,
+        )
+    return NotificationsOut(
+        weekly_digest=setting.enabled,
+        send_weekday=setting.send_weekday,
+        send_hour=setting.send_hour,
+    )
+
+
 @router.get("/notifications", response_model=NotificationsOut)
 def get_notifications(user: CurrentUser, db: DbSession) -> NotificationsOut:
-    setting = _setting(db, user)
-    # No row means the default, which is on.
-    return NotificationsOut(weekly_digest=setting.enabled if setting else True)
+    # No row means the defaults — on, and the same Monday morning everyone had before
+    # the schedule was theirs to set.
+    return _out(_setting(db, user))
 
 
 @router.patch("/notifications", response_model=NotificationsOut)
 def update_notifications(
     body: NotificationsUpdate, user: CurrentUser, db: DbSession
 ) -> NotificationsOut:
+    """Change any of the three; the ones left out keep their value.
+
+    A row is created on first change with the defaults filled in, so setting only the
+    hour cannot quietly move someone's day as a side effect.
+    """
+    fields = body.model_dump(exclude_unset=True, exclude_none=True)
+    if not fields:
+        return _out(_setting(db, user))
+
     setting = _setting(db, user)
-    if body.weekly_digest is not None:
-        if setting is None:
-            setting = NotificationSetting(user_id=user.id, kind=KIND, enabled=body.weekly_digest)
-            db.add(setting)
-        else:
-            setting.enabled = body.weekly_digest
-        db.commit()
-    return NotificationsOut(weekly_digest=setting.enabled if setting else True)
+    if setting is None:
+        setting = NotificationSetting(
+            user_id=user.id,
+            kind=KIND,
+            enabled=True,
+            send_weekday=digest.DEFAULT_WEEKDAY,
+            send_hour=digest.DEFAULT_HOUR,
+        )
+        db.add(setting)
+    if "weekly_digest" in fields:
+        setting.enabled = fields["weekly_digest"]
+    if "send_weekday" in fields:
+        setting.send_weekday = fields["send_weekday"]
+    if "send_hour" in fields:
+        setting.send_hour = fields["send_hour"]
+    db.commit()
+    return _out(setting)
 
 
 @router.post("/notifications/unsubscribe", response_model=MessageOut)

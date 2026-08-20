@@ -36,13 +36,27 @@ from app.services.aggregates import (
     spend_by_category,
 )
 
-#: Local weekday and hour a digest goes out. Monday morning, in the reader's own time.
-SEND_WEEKDAY = 0
-SEND_HOUR = 8
+#: What a reader gets before they choose otherwise, and what everyone got when the
+#: schedule was fixed. Monday is 0, matching `date.weekday()`.
+DEFAULT_WEEKDAY = 0
+DEFAULT_HOUR = 8
 
-#: How recently a send blocks another. Six rather than seven so an hour of cron skew
-#: cannot push a week's digest past its own window and skip it entirely.
-COOLDOWN_DAYS = 6
+#: How long after its appointed hour a digest may still go out.
+#:
+#: This is the slack that absorbs the scheduler. GitHub's cron is best-effort and skews
+#: under load — an hour is routinely late and occasionally never arrives at all — so a
+#: window exactly one hour wide would drop a reader's week with nothing in any log to
+#: say why.
+#:
+#: It replaces a check that read `weekday == SEND_WEEKDAY and hour >= SEND_HOUR`. That
+#: gave the same protection *by accident*: with the hour fixed at 08:00 the digest
+#: stayed eligible until midnight, sixteen hours later. The slack was a property of the
+#: chosen hour rather than a decision, and the moment a reader picked 23:00 it silently
+#: became one hour. Stating it as a duration is what makes every hour equally safe.
+#:
+#: It also bounds catching up, which the cooldown it replaces did not: a day after the
+#: fact is a late digest, whereas Friday's news on Sunday is just wrong.
+CATCH_UP = dt.timedelta(hours=24)
 
 
 @dataclass(frozen=True)
@@ -67,12 +81,38 @@ def _local_now(user: User, now: dt.datetime) -> dt.datetime:
     return now.astimezone(dt.UTC)
 
 
-def due_now(db: Session, now: dt.datetime, *, claim: bool = True) -> list[User]:
-    """Everyone whose local Monday morning has arrived and who has not had one.
+def _appointment(local_now: dt.datetime, weekday: int, hour: int) -> dt.datetime:
+    """The most recent local ``weekday`` at ``hour``:00, at or before ``local_now``.
 
-    The weekday check is what keeps this well behaved: enabling the digest on a
-    Wednesday sends nothing until the following Monday, rather than firing immediately
-    because "8am has passed".
+    Arithmetic in wall time, then converted by the caller, so a reader who asked for
+    08:00 gets 08:00 on both sides of a daylight-saving change rather than 07:00 for
+    half the year. The hour that does not exist on a spring-forward Sunday resolves to
+    a real instant rather than raising — a digest an hour off is a digest; an exception
+    on that one day a year would take out every reader in that zone.
+    """
+    days_back = (local_now.weekday() - weekday) % 7
+    appointment = (local_now - dt.timedelta(days=days_back)).replace(
+        hour=hour, minute=0, second=0, microsecond=0
+    )
+    # `days_back == 0` on the day itself, where the hour may not have come round yet.
+    if appointment > local_now:
+        appointment -= dt.timedelta(days=7)
+    return appointment
+
+
+def due_now(db: Session, now: dt.datetime, *, claim: bool = True) -> list[User]:
+    """Everyone whose chosen day and hour has arrived and who has not had one.
+
+    Due means three things at once: the appointment has passed, it passed recently
+    enough to still be worth sending (`CATCH_UP`), and nothing has been sent since it.
+
+    That last clause is what makes the schedule editable. It compares against *this
+    week's appointment* rather than against a fixed number of days, so moving from
+    Monday to Thursday takes effect on the Thursday instead of waiting out a cooldown
+    measured from a send that answered a different question.
+
+    Enabling on a Wednesday still sends nothing until the chosen day comes round: the
+    most recent appointment is then days old, and `CATCH_UP` has long since closed.
 
     ``claim=False`` answers the same question without taking anyone's week, so a run
     that is not going to send anything can be repeated freely and leaves no trace.
@@ -92,34 +132,40 @@ def due_now(db: Session, now: dt.datetime, *, claim: bool = True) -> list[User]:
 
     due: list[User] = []
     for user, setting in candidates:
-        # No row means the default, which is on.
+        # No row means the defaults, which are on, Monday, 08:00.
         if setting is not None and not setting.enabled:
             continue
-        local = _local_now(user, now)
-        if local.weekday() != SEND_WEEKDAY or local.hour < SEND_HOUR:
+        weekday = setting.send_weekday if setting else DEFAULT_WEEKDAY
+        hour = setting.send_hour if setting else DEFAULT_HOUR
+
+        appointment = _appointment(_local_now(user, now), weekday, hour).astimezone(dt.UTC)
+        if not appointment <= now < appointment + CATCH_UP:
             continue
         if not claim:
             due.append(user)
-        elif _claim(db, user.id, now):
+        elif _claim(db, user.id, now, since=appointment):
             due.append(user)
     return due
 
 
-def _claim(db: Session, user_id: uuid.UUID, now: dt.datetime) -> bool:
-    """Take this week's slot for one user, atomically. True if we got it.
+def _claim(db: Session, user_id: uuid.UUID, now: dt.datetime, *, since: dt.datetime) -> bool:
+    """Take this appointment's slot for one user, atomically. True if we got it.
 
-    The "not sent recently" test lives inside the UPDATE rather than in a read before
-    it. Read-then-write would let two overlapping runs both see an old timestamp and
-    both send.
+    The "not sent yet" test lives inside the UPDATE rather than in a read before it.
+    Read-then-write would let two overlapping runs both see an old timestamp and both
+    send.
+
+    ``since`` is the appointment being claimed, not a rolling cooldown. Comparing to a
+    fixed point rather than to "less than N days ago" is what lets a reader move their
+    day without either losing a week or getting two.
     """
-    cutoff = now - dt.timedelta(days=COOLDOWN_DAYS)
     claimed = db.execute(
         update(NotificationSetting)
         .where(
             NotificationSetting.user_id == user_id,
             NotificationSetting.kind == NotificationSetting.WEEKLY_DIGEST,
             (NotificationSetting.last_sent_at.is_(None))
-            | (NotificationSetting.last_sent_at < cutoff),
+            | (NotificationSetting.last_sent_at < since),
         )
         .values(last_sent_at=now)
         .returning(NotificationSetting.id)

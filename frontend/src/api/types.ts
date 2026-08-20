@@ -118,6 +118,10 @@ export interface TransactionCreate {
 
 export interface Notifications {
   weekly_digest: boolean;
+  /** 0 = Monday, matching Python's `date.weekday()` and the server's CHECK. */
+  send_weekday: number;
+  /** 0–23, in the reader's own time zone. Hours only: the cron runs hourly. */
+  send_hour: number;
 }
 
 export type AssetGroup = 'physical' | 'investment';
