@@ -1,8 +1,8 @@
 """allow the oauth_handoff purpose in auth_tokens
 
-Revision ID: 0017
-Revises: 0016
-Create Date: 2026-08-11
+Revision ID: 0018
+Revises: 0017
+Create Date: 2026-08-20
 
 Widens `ck_auth_tokens_purpose` by one value. Google's callback now issues an
 `oauth_handoff` — a single-use secret the browser exchanges for an access token —
@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0017"
-down_revision: str | None = "0016"
+revision: str = "0018"
+down_revision: str | None = "0017"
 branch_labels: str | None = None
 depends_on: str | None = None
 
