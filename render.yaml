@@ -41,12 +41,15 @@ services:
       # Quoted: unquoted `false` is a YAML boolean, and env vars are strings.
       - key: LLM_ENABLED
         value: "false"
-      # *.onrender.com and *.vercel.app are different sites, so the refresh
-      # cookie needs SameSite=None or the browser drops it and every reload
-      # signs the user out. Switch to "lax" once a custom domain makes the app
-      # and API same-site.
+      # askfrankly.app and api.askfrankly.app are the same site, so the refresh
+      # cookie no longer crosses a site boundary: Lax is enough, and no browser
+      # blocks it as third-party. It was "none" while the API answered on
+      # *.onrender.com, and moving the API back off the custom domain means
+      # putting this back to "none" FIRST — Lax against a cross-site API drops
+      # the cookie on every request and signs everyone out, with no error
+      # anywhere. "none" also requires ENV=prod, since Secure follows ENV.
       - key: COOKIE_SAMESITE
-        value: none
+        value: lax
       # Prompted on first deploy: the Neon connection string.
       - key: DATABASE_URL
         sync: false
