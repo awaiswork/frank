@@ -11,8 +11,8 @@ a short one. It works here only because the row is found by ``(user_id,
 purpose)`` and the code is then *verified* against the hash. We never search by
 the secret, which we couldn't anyway — bcrypt salts every hash differently.
 
-**Random strings** (`password_reset_ticket`) are 32 bytes from the
-CSPRNG, never seen by a person. Nothing to guess, so SHA-256 and a lookup by
+**Random strings** (`password_reset_ticket`, `oauth_handoff`) are 32 bytes from
+the CSPRNG, never seen by a person. Nothing to guess, so SHA-256 and a lookup by
 hash, which is inherently constant-time with respect to the secret.
 """
 
@@ -59,6 +59,8 @@ def _ttl(purpose: str) -> timedelta:
     settings = get_settings()
     if purpose in AuthToken.CODE_PURPOSES:
         return timedelta(minutes=settings.otp_ttl_minutes)
+    if purpose == AuthToken.OAUTH_HANDOFF:
+        return timedelta(seconds=settings.oauth_handoff_ttl_seconds)
     return timedelta(minutes=settings.reset_ticket_ttl_minutes)
 
 
@@ -144,7 +146,7 @@ def check_code(db: Session, user_id: uuid.UUID, purpose: str, code: str) -> Code
 
 
 def issue_secret(db: Session, user_id: uuid.UUID, purpose: str) -> str:
-    """Mint a random single-use secret. Currently just the reset ticket."""
+    """Mint a random single-use secret — the reset ticket, or an OAuth handoff."""
     invalidate_outstanding(db, user_id, purpose)
     secret = generate_token()
     db.add(

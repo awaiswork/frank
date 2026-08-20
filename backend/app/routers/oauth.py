@@ -11,9 +11,24 @@ cookie is fragile and deliberately untouched (CLAUDE.md), and a second cookie
 crossing the same boundary would need the same `SameSite=None; Secure` care.
 Server-side state sidesteps the question entirely.
 
-The access token is never put in a redirect URL — URLs reach history, `Referer`
-headers and server logs. The callback sets the refresh cookie and the app
-exchanges it through the existing `/auth/refresh` when it lands.
+**The finished session is handed over in the URL fragment, not through the
+cookie.** The cookie is still set here, and on a browser that keeps it nothing
+else is needed — but the app and the API are on different sites, so it is a
+third-party cookie, and Safari (which is every browser on iOS), Firefox and
+Chrome's incognito windows will not send one back. This flow depended on exactly
+that: the callback ended in a session the app could not see, so `/auth/callback`
+asked `/auth/refresh` who it was, got a 401, and sent the user back to
+`/login?oauth=failed`. Google sign-in worked on a laptop and failed on every
+phone. Password login survived the same browsers only because its access token
+comes back in a response body, where no cookie policy applies.
+
+So the callback also issues an `oauth_handoff` secret — 32 random bytes, hashed
+at rest, single use, dead in two minutes — and puts it in the redirect's
+*fragment*. The fragment is the one part of a URL that is sent to nobody: unlike
+a query parameter it reaches no access log and no `Referer` header, and the app
+drops it out of history as soon as it has read it. The access token itself is
+still never in a URL — it is the answer to `POST /auth/google/handoff`, which is
+the only thing a handoff can buy.
 """
 
 from __future__ import annotations
@@ -31,11 +46,15 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.core.security import create_access_token
 from app.core.tokens import generate_token, hash_token
 from app.deps import DbSession
-from app.models import OAuthAccount, OAuthState, User
+from app.limits import AUTH_LIMIT, limiter
+from app.models import AuthToken, OAuthAccount, OAuthState, User
 from app.routers.auth import start_session
+from app.schemas import HandoffIn, TokenOut
 from app.seed import seed_default_categories
+from app.services import auth_tokens
 
 log = logging.getLogger("frankly")
 router = APIRouter(tags=["auth"])
@@ -151,14 +170,51 @@ def google_callback(
 
     user = _link_or_create(db, str(claims["sub"]), str(claims["email"]))
 
+    # Both halves of the handover, because either one may be the half that
+    # survives this browser: the cookie for one that keeps third-party cookies,
+    # the handoff for one that doesn't. The handoff comes first — it has to exist
+    # before the URL it travels in can be built.
+    handoff = auth_tokens.issue_secret(db, user.id, AuthToken.OAUTH_HANDOFF)
     # The cookie is written onto the redirect itself. Setting it on an injected
     # Response would be dropped the moment we return a different Response —
     # the same way a rejected refresh used to lose its cookie deletion.
-    redirect = RedirectResponse(_app_url("/auth/callback"), status_code=302)
+    redirect = RedirectResponse(
+        f"{_app_url('/auth/callback')}#{urlencode({'handoff': handoff})}",
+        status_code=302,
+    )
     start_session(db, redirect, user.id, remember=True)
     db.commit()
     log.info('{"event":"oauth_signin","provider":"google","user_id":"%s"}', user.id)
     return redirect
+
+
+@router.post("/auth/google/handoff", response_model=TokenOut)
+@limiter.limit(AUTH_LIMIT)
+def google_handoff(request: Request, body: HandoffIn, db: DbSession) -> TokenOut:
+    """Redeem the callback's handoff for an access token.
+
+    This is where a sign-in finishes on a browser that dropped the refresh
+    cookie, and it is the only path that does not depend on one.
+
+    Single use, which is what makes a secret in a URL an acceptable trade: the
+    copy left in the browser's history is spent within a second of being issued,
+    long before anybody could go looking through history for it. Failure is
+    undifferentiated — `consume_secret` answers `None` for unknown, expired,
+    already-spent and wrong-purpose alike.
+
+    No session starts here. The callback already started one and set its cookie;
+    minting another would leave the first orphaned in `refresh_sessions` for its
+    full thirty days, and there would be two sessions per sign-in.
+    """
+    _require_configured()
+    token = auth_tokens.consume_secret(db, body.handoff, AuthToken.OAUTH_HANDOFF)
+    if token is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That sign-in has expired. Try again.")
+    user_id = token.user_id
+    access = create_access_token(user_id)
+    db.commit()
+    log.info('{"event":"oauth_handoff_redeemed","provider":"google","user_id":"%s"}', user_id)
+    return TokenOut(access_token=access)
 
 
 def _consume_state(db: DbSession, state: str) -> str | None:

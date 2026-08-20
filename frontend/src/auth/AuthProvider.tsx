@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  completeGoogleSignIn,
   logoutEverywhere as logoutEverywhereRequest,
   logoutSession,
   registerAccount,
@@ -16,6 +17,7 @@ import {
   setSessionExpiredHandler,
 } from '../api/client';
 import type { TokenOut, User } from '../api/types';
+import { pendingHandoff } from '../lib/handoff';
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -25,6 +27,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   /** True when a live session ended under us, so login can explain itself. */
   const [expired, setExpired] = useState(false);
+  /**
+   * Whether this page load landed with a Google handoff to spend.
+   *
+   * Read during *render*, which is the only place it can be read reliably: a
+   * child's effects run before its parent's, so by the time the effect below
+   * runs, `AuthCallback` has already taken the fragment out of the URL.
+   */
+  const handoffPending = useRef(pendingHandoff() !== null);
 
   const loadUser = useCallback(async () => {
     const me = await apiFetch<User>('/me');
@@ -65,6 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // nothing threw, nothing resolved, and no amount of try/catch/finally here
   // could have noticed. The deadline lives in `api/client`; this just classifies.
   useEffect(() => {
+    // Except when a Google handoff is waiting: `AuthCallback` is about to
+    // exchange it, and restoring from the cookie alongside that would be exactly
+    // the request the handoff exists to avoid — a third-party cookie the browser
+    // never sent, answered with a 401 that would set 'anon' and bounce a working
+    // sign-in to the login screen. Status stays 'loading', which is what
+    // `AuthCallback` is showing anyway.
+    if (handoffPending.current) return;
     let cancelled = false;
     void (async () => {
       const restored = await refreshAccessToken(BOOTSTRAP_TIMEOUT_MS);
@@ -114,9 +131,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [adopt],
   );
 
+  const completeOAuth = useCallback(
+    (handoff: string) => completeGoogleSignIn(handoff).then(adopt),
+    [adopt],
+  );
+
   // Back to 'loading' here rather than in the effect: a retry is an event, so the
   // status change belongs with it instead of as a re-render the effect triggers.
   const retry = useCallback(() => {
+    // A retry is also how a failed handoff falls back to the cookie, so the
+    // handoff has had its one chance by now: clear the flag, or the restore below
+    // would skip itself again and the fallback would never make a request.
+    handoffPending.current = false;
     setStatus('loading');
     setAttempt((n) => n + 1);
   }, []);
@@ -133,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // until another code may be sent, and the code screen has to honour that.
       register: (email, password) => registerAccount(email, password),
       verify: async (email, code) => adopt(await verifyCode(email, code)),
+      completeOAuth,
       // Tell the server first. The refresh cookie is httpOnly, so clearing
       // client state alone would leave a working credential in the jar — which
       // is exactly how signing out used to survive a reload.
@@ -149,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser: setUserState,
       retry,
     }),
-    [status, user, expired, login, adopt, forgetLocally, retry],
+    [status, user, expired, login, adopt, completeOAuth, forgetLocally, retry],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

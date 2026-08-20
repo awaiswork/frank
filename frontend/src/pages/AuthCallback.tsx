@@ -1,28 +1,45 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
+import { forgetHandoff, pendingHandoff } from '../lib/handoff';
 
 /**
  * Where Google's sign-in lands.
  *
- * The API set the refresh cookie on its redirect and put nothing in the URL —
- * an access token in a query string ends up in history, in `Referer` headers
- * and in server logs. So there is nothing to read here: the app simply asks the
- * provider to restore the session it already has a cookie for, which is the
- * same path a normal page load takes.
+ * The API finished the sign-in and handed this page the session two ways over: a
+ * refresh cookie, and a single-use handoff secret in the URL fragment. This
+ * spends the handoff, because it is the half that survives a browser blocking
+ * third-party cookies — which is Safari, so every browser on iOS, which is why
+ * Google sign-in worked on a laptop and failed on a phone.
+ *
+ * The cookie is the fallback rather than the primary, and it is genuinely a
+ * fallback: if the handoff is missing, spent or refused, `retry()` restores from
+ * the cookie exactly as this page used to, and lands on login with a reason when
+ * that fails too. The access token is never in the URL either way — the handoff
+ * buys one over POST, and buys nothing else.
  */
 export function AuthCallback() {
-  const { status, retry } = useAuth();
+  const { status, retry, completeOAuth } = useAuth();
+  // Read before the first paint, so the fragment is captured even though the
+  // effect below is what strips it.
+  const [handoff] = useState(pendingHandoff);
   const started = useRef(false);
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
-    // Once. StrictMode mounts effects twice in development, and a second
-    // restore would rotate the refresh token underneath the first.
+    // Once. StrictMode mounts effects twice in development, and the second run
+    // would spend a secret the server has already burned.
     if (started.current) return;
     started.current = true;
-    retry();
-  }, [retry]);
+    // Out of the address bar before the request that spends it: whatever is in
+    // the bar is also in this tab's history.
+    forgetHandoff();
+    if (handoff === null) {
+      retry();
+      return;
+    }
+    void completeOAuth(handoff).catch(() => retry());
+  }, [handoff, retry, completeOAuth]);
 
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), 3000);
@@ -30,8 +47,8 @@ export function AuthCallback() {
   }, []);
 
   if (status === 'authed') return <Navigate to="/" replace />;
-  // Anything else means the cookie didn't survive the round trip. Back to
-  // login, which will say so rather than leaving a spinner running.
+  // Anything else means neither half of the handover worked. Back to login,
+  // which will say so rather than leaving a spinner running.
   if (status === 'anon') return <Navigate to="/login?oauth=failed" replace />;
   if (status === 'unreachable') return <Navigate to="/login?oauth=unreachable" replace />;
 

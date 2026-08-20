@@ -89,6 +89,21 @@ export async function logoutEverywhere(): Promise<void> {
 }
 
 /**
+ * Finish a Google sign-in by spending the handoff its callback left in the URL.
+ *
+ * The one way into a session that needs no cookie, which is the point: the
+ * refresh cookie is third-party here, and the browsers that drop it are most of
+ * the mobile ones. Single use server-side, so this is called exactly once — see
+ * `lib/handoff` and `backend/app/routers/oauth.py`.
+ */
+export function completeGoogleSignIn(handoff: string): Promise<TokenOut> {
+  return apiFetch<TokenOut>('/auth/google/handoff', {
+    method: 'POST',
+    body: json({ handoff }),
+  });
+}
+
+/**
  * Where the browser goes to start Google sign-in.
  *
  * A full navigation, not fetch: the flow is a chain of redirects through

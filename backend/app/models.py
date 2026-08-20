@@ -112,8 +112,8 @@ class AuthToken(UUIDPk, Base):
 
     - the two ``*_code`` purposes hold a six-digit OTP, which is guessable, so
       the hash is bcrypt and the row is found by ``(user_id, purpose)``;
-    - ``password_reset_ticket`` holds 32 random bytes, which are not, so the hash
-      is SHA-256 and the row is found *by the hash*.
+    - ``password_reset_ticket`` and ``oauth_handoff`` hold 32 random bytes, which
+      are not, so the hash is SHA-256 and the row is found *by the hash*.
 
     ``secret_hash`` is therefore not uniquely indexed: two users could in
     principle hold bcrypt hashes that collide in no meaningful way, and more to
@@ -125,6 +125,9 @@ class AuthToken(UUIDPk, Base):
     EMAIL_VERIFY_CODE = "email_verify_code"
     PASSWORD_RESET_CODE = "password_reset_code"
     PASSWORD_RESET_TICKET = "password_reset_ticket"
+    #: Redeemed once, seconds after it is issued, for the access token that ends
+    #: a Google sign-in. See ``routers/oauth`` for why the flow needs one.
+    OAUTH_HANDOFF = "oauth_handoff"
 
     #: The purposes whose secret is a six-digit code rather than a random string.
     CODE_PURPOSES = (EMAIL_VERIFY_CODE, PASSWORD_RESET_CODE)
@@ -146,7 +149,8 @@ class AuthToken(UUIDPk, Base):
 
     __table_args__ = (
         CheckConstraint(
-            "purpose IN ('email_verify_code','password_reset_code','password_reset_ticket')",
+            "purpose IN ('email_verify_code','password_reset_code',"
+            "'password_reset_ticket','oauth_handoff')",
             name="ck_auth_tokens_purpose",
         ),
         Index("ix_auth_tokens_user_purpose", "user_id", "purpose"),

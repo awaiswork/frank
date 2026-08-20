@@ -20,7 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import OAuthAccount, OAuthState, User
+from app.models import AuthToken, OAuthAccount, OAuthState, RefreshSession, User
+from app.services import auth_tokens
 from tests.conftest import SentEmail
 from tests.test_auth_codes import PW, register
 
@@ -82,11 +83,25 @@ def begin(client: TestClient) -> str:
     return str(query["state"][0])
 
 
+def land(client: TestClient) -> str:
+    """Run a whole sign-in and return the handoff the callback handed over."""
+    state = begin(client)
+    res = client.get(f"/auth/google/callback?code=x&state={state}", follow_redirects=False)
+    assert res.status_code == 302
+    return handoff_from(res.headers["location"])
+
+
+def handoff_from(location: str) -> str:
+    """The secret out of the redirect's fragment, where the app reads it."""
+    return str(parse_qs(urlparse(location).fragment)["handoff"][0])
+
+
 class TestNotConfigured:
     def test_routes_404_without_credentials(self, client: TestClient) -> None:
         """The app has to run for someone who never set Google up."""
         assert client.get("/auth/google/start", follow_redirects=False).status_code == 404
         assert client.get("/auth/google/callback", follow_redirects=False).status_code == 404
+        assert client.post("/auth/google/handoff", json={"handoff": "x"}).status_code == 404
 
 
 class TestStart:
@@ -216,7 +231,7 @@ class TestCallbackSuccess:
         res = client.get(f"/auth/google/callback?code=x&state={state}", follow_redirects=False)
 
         assert res.status_code == 302
-        assert res.headers["location"].endswith("/auth/callback")
+        assert urlparse(res.headers["location"]).path == "/auth/callback"
         # The cookie rides on the redirect. Setting it on an injected Response
         # would be dropped the moment a different Response is returned.
         assert "frankly_refresh" in res.cookies
@@ -229,11 +244,30 @@ class TestCallbackSuccess:
     def test_the_access_token_never_appears_in_the_url(
         self, client: TestClient, google: None, exchange: Any
     ) -> None:
-        """URLs reach history, Referer headers and server logs."""
+        """URLs reach history, Referer headers and server logs.
+
+        What does travel is the handoff, and the difference is the point: it is
+        not a credential any route accepts, only something that can be exchanged
+        for one, once.
+        """
         state = begin(client)
         res = client.get(f"/auth/google/callback?code=x&state={state}", follow_redirects=False)
         location = res.headers["location"]
-        assert "token" not in location and "?" not in location
+        assert "access_token" not in location
+        handoff = handoff_from(location)
+        refused = client.get("/me", headers={"Authorization": f"Bearer {handoff}"})
+        assert refused.status_code == 401, "a handoff is not a bearer token"
+
+    def test_the_handoff_travels_in_the_fragment_not_the_query(
+        self, client: TestClient, google: None, exchange: Any
+    ) -> None:
+        """A fragment is the one part of a URL sent to nobody — no access log, no
+        `Referer`. A query parameter would be in both, on two providers' logs."""
+        state = begin(client)
+        res = client.get(f"/auth/google/callback?code=x&state={state}", follow_redirects=False)
+        location = res.headers["location"]
+        assert "#handoff=" in location
+        assert "?" not in location
 
     def test_a_new_account_gets_its_default_categories(
         self, client: TestClient, google: None, exchange: Any
@@ -266,6 +300,103 @@ class TestCallbackSuccess:
         client.get(f"/auth/google/callback?code=x&state={state}", follow_redirects=False)
 
         assert len(db.scalars(select(User)).all()) == 1
+
+
+class TestHandoff:
+    """Finishing a sign-in without the refresh cookie.
+
+    This is the bug the handoff exists for. The app and the API are on different
+    sites, so that cookie is a third-party one, and Safari — which is every
+    browser on iOS — will not send it back. The callback's session was therefore
+    invisible to the app: `/auth/callback` asked who it was, got a 401, and sent
+    the user to `/login?oauth=failed`. Sign-in worked on every laptop and failed
+    on every phone, which is exactly the shape of bug that survives testing.
+    """
+
+    def test_signs_in_with_every_cookie_dropped(
+        self, client: TestClient, google: None, exchange: Any
+    ) -> None:
+        handoff = land(client)
+        client.cookies.clear()  # what a browser blocking third-party cookies keeps
+
+        res = client.post("/auth/google/handoff", json={"handoff": handoff})
+        assert res.status_code == 200
+
+        me = client.get("/me", headers={"Authorization": f"Bearer {res.json()['access_token']}"})
+        assert me.status_code == 200
+        assert me.json()["email"] == "someone@gmail.com"
+
+    def test_it_is_single_use(self, client: TestClient, google: None, exchange: Any) -> None:
+        """The copy left behind in browser history has to be worth nothing."""
+        handoff = land(client)
+        assert client.post("/auth/google/handoff", json={"handoff": handoff}).status_code == 200
+
+        replayed = client.post("/auth/google/handoff", json={"handoff": handoff})
+        assert replayed.status_code == 400
+
+    def test_an_unknown_handoff_is_refused(
+        self, client: TestClient, google: None, exchange: Any
+    ) -> None:
+        land(client)
+        res = client.post("/auth/google/handoff", json={"handoff": "never-issued"})
+        assert res.status_code == 400
+
+    def test_an_expired_handoff_is_refused(
+        self, client: TestClient, db: Session, google: None, exchange: Any
+    ) -> None:
+        handoff = land(client)
+        row = db.scalar(select(AuthToken).where(AuthToken.purpose == AuthToken.OAUTH_HANDOFF))
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.flush()
+
+        assert client.post("/auth/google/handoff", json={"handoff": handoff}).status_code == 400
+
+    def test_it_expires_in_the_configured_seconds(
+        self, client: TestClient, db: Session, google: None, exchange: Any
+    ) -> None:
+        """Minutes, not seconds, is what the other random secret in this table
+        gets — a handoff that inherited the reset ticket's ten would sit in
+        history alive for ten minutes rather than two."""
+        land(client)
+        row = db.scalar(select(AuthToken).where(AuthToken.purpose == AuthToken.OAUTH_HANDOFF))
+        assert row is not None
+        # `created_at` is the database's clock and `expires_at` ours, so they
+        # disagree by the microseconds between them. Which setting was read is
+        # the point; the drift is not.
+        life = row.expires_at - row.created_at
+        configured = timedelta(seconds=get_settings().oauth_handoff_ttl_seconds)
+        assert abs(life - configured) < timedelta(seconds=1)
+
+    def test_a_reset_ticket_cannot_be_spent_as_a_handoff(
+        self, client: TestClient, db: Session, google: None, exchange: Any
+    ) -> None:
+        """One table holds both, so the purpose is what keeps them apart."""
+        land(client)
+        user = db.scalar(select(User).where(User.email == "someone@gmail.com"))
+        assert user is not None
+        ticket = auth_tokens.issue_secret(db, user.id, AuthToken.PASSWORD_RESET_TICKET)
+        db.flush()
+
+        assert client.post("/auth/google/handoff", json={"handoff": ticket}).status_code == 400
+
+    def test_redeeming_it_starts_no_second_session(
+        self, client: TestClient, db: Session, google: None, exchange: Any
+    ) -> None:
+        """The callback already started one. A second would leave the first
+        orphaned in the table for its full thirty days."""
+        handoff = land(client)
+        assert client.post("/auth/google/handoff", json={"handoff": handoff}).status_code == 200
+        assert len(db.scalars(select(RefreshSession)).all()) == 1
+
+    def test_signing_in_again_retires_the_earlier_handoff(
+        self, client: TestClient, google: None, exchange: Any
+    ) -> None:
+        """Two sign-ins in a row leave one live secret, not two."""
+        first = land(client)
+        second = land(client)
+        assert client.post("/auth/google/handoff", json={"handoff": first}).status_code == 400
+        assert client.post("/auth/google/handoff", json={"handoff": second}).status_code == 200
 
 
 class TestLinking:

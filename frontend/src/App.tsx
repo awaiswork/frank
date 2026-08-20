@@ -30,8 +30,10 @@ export default function App() {
       {/* Codes, not links: nothing here is reachable from an inbox, so these
           carry their state in the router rather than the URL. */}
       <Route path="/verify" element={<VerifyCode />} />
-      {/* Where Google's redirect lands. The refresh cookie is already set. */}
       <Route path="/unsubscribe" element={<Unsubscribe />} />
+      {/* Where Google's redirect lands, carrying a single-use handoff in the
+          fragment. Public: there is no session yet — spending it is what starts
+          one. */}
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/onboarding" element={<Onboarding />} />

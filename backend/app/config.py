@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     reset_ticket_ttl_minutes: int = 10
     #: How long a half-finished Google sign-in stays resumable.
     oauth_state_ttl_minutes: int = 10
+    #: How long the callback's handoff secret stays redeemable. Two minutes is
+    #: the whole of "Google redirected the browser, the app loaded, its first
+    #: request went out" — generous on a phone changing cell, and short enough
+    #: that the copy left in browser history is dead long before anyone reads it.
+    oauth_handoff_ttl_seconds: int = 120
     # Client-visible cooldown between sends, per user.
     email_resend_cooldown_seconds: int = 60
 
