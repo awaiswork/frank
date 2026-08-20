@@ -207,6 +207,7 @@ def run_digest(
             upcoming_count=content.upcoming_count,
             safe_to_spend_cents=content.safe_to_spend_cents,
             streak=content.streak,
+            app_url=settings.app_base_url,
             unsubscribe_url=f"{settings.app_base_url}/unsubscribe?token={sign(user.id, KIND)}",
         )
         queue_email(background, message, to=user.email, user_id=user.id, purpose="weekly_digest")
